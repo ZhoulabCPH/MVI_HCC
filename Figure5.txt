@@ -1,0 +1,178 @@
+######## Figure 5a
+library(scRNAtoolVis)
+library(ggplot2)
+library(ggpubr)
+library(Seurat)
+library(dplyr)
+library(pheatmap)
+
+HC = scdata3[,filter(scdata3@meta.data,celltype %in% c('Hepa')) %>% rownames()]
+HC = SCTransform(HC, vars.to.regress = c("percent.mt", "nFeature_RNA","nCount_RNA")) 
+HC = RunPCA(HC, features = VariableFeatures(HC)) 
+ElbowPlot(HC,ndims = 50)
+
+HC = RunUMAP(HC, reduction = "pca",dims = 1:30)
+HC = FindNeighbors(HC, reduction = "pca", dims = 1:30)             
+HC = FindClusters(HC, resolution = 1,algorithm=1)
+
+DimPlot(HC, reduction = "umap",group.by = 'seurat_clusters',label = T)+NoLegend()
+
+FeaturePlot(HC, reduction = "umap", features = c("PTPRC"))   # Doublet 15,18
+
+HC2 = HC[,filter(HC@meta.data, !SCT_snn_res.1 %in% c(15,18)) %>% rownames()] 
+
+
+HC2 = SCTransform(HC2, vars.to.regress = c("percent.mt", "nFeature_RNA","nCount_RNA")) 
+HC2 = RunPCA(HC2, features = VariableFeatures(HC2)) 
+ElbowPlot(HC2,ndims = 50)
+
+
+HC2 = RunUMAP(HC2, reduction = "pca",dims = 1:24)
+HC2 = FindNeighbors(HC2, reduction = "pca", dims = 1:24)
+HC2 = FindClusters(HC2, resolution = 0.2,algorithm= 1)
+  
+DimPlot(HC2, reduction = "umap",group.by = 'SCT_snn_res.0.1',
+        label = T,cols = c('#DAAAB8','#E26648','#BC6805','#F3C92B','#6EAE1F','#B1D7EA','#364B90'))+NoLegend()
+DimPlot(HC2, reduction = "umap",group.by = 'Patient',label = F,cols = c('#98C282','#E29F58','#AB836A','#7E98BB','#A780B9'))
+DimPlot(HC2, reduction = "umap",group.by = 'orig.ident',label = F)
+
+
+
+
+######## Figure 5b
+library(msigdbr)
+library(GSVA)
+library(Seurat)
+library(readxl)
+library(stringr)
+anno = read_excel('hallmark.xlsx') %>% data.frame()
+rownames(anno) = anno$Hallmark.Name
+anno = data.frame(row.names = anno$Hallmark.Name,anno$Process.Category)
+m_df = msigdbr(species = "Homo sapiens", category = "H") 
+msigdbr_list = split(x = m_df$gene_symbol, f = m_df$gs_name)
+
+expr <- as.data.frame(Malig@assays$SCT@data) 
+expr=as.matrix(expr) 
+Hall <- gsva(expr, msigdbr_list, kcdf="Gaussian",method = "gsva")
+
+
+Hall = data.frame(t(Hall))
+colnames(Hall) = substring(colnames(Hall),10,)
+
+Hall = Hall[rownames(Malig@meta.data),]
+
+Hall$MVI2 = Malig$MVI2
+
+Hall_mean = group_by(Hall, MVI2) %>% summarize_each(funs(mean)) %>% data.frame()
+rownames(Hall_mean) = Hall_mean$MVI2
+Hall_mean$MVI2 = NULL
+Hall_mean = data.frame(t(Hall_mean))
+Hall_mean$fc = (Hall_mean$MVI-Hall_mean$Non_MVI)*10
+
+Hall_mean$name = rownames(Hall_mean)
+Hall_mean = arrange(Hall_mean,fc)
+Hall_mean$name = factor(Hall_mean$name,levels = (Hall_mean$name))
+ggplot(Hall_mean[c(1:5,46:50),], aes(x=name, y=fc)) +
+  geom_bar(position = "dodge",stat = "identity",colour="black",fill = "#f7c2c5",width=0.6)+coord_flip()+ylim(-1.5,2)   
+
+
+
+######## Figure 5c
+HC2 = CellCycleScoring(object = HC2, 
+                       g2m.features = cc.genes$g2m.genes,
+                       s.features = cc.genes$s.genes)
+
+table(HC2$MVI,HC2$Phase)
+prop = prop.table(table(HC2@meta.data$Phase, HC2@meta.data[,"MVI"]), 2) *100
+prop = reshape2::melt(prop)
+ggplot(prop,aes(Var2,value,fill = Var1 ))+geom_bar(stat = "identity")
+
+
+
+######## Figure 5d
+library(msigdbr)
+VlnPlot(Malig,features = c('CCL3','CCL4','HLA-G'),group.by = 'MVI',pt.size = 0)
+
+m_df = msigdbr(species = "Homo sapiens", category = "H") 
+Malig <- AddModuleScore(object = Malig, 
+                           features = list(c(filter(m_df,
+                                                    gs_name == 'HALLMARK_INFLAMMATORY_RESPONSE')$gene_symbol)))+NoLegend()
+VlnPlot(Malig,features = 'INFLAMMATORY_RESPONSE1',group.by = 'MVI',pt.size = 0)+stat_compare_means()
+
+
+
+######## Figure 5e-f
+library(monocle)
+Mono_matrix = as(as.matrix(GetAssayData(HC2,slot = "count")), 'sparseMatrix')
+feature_ann = data.frame(gene_id=rownames(Mono_matrix),gene_short_name=rownames(Mono_matrix))
+rownames(feature_ann) = rownames(Mono_matrix)
+Mono_fd = new("AnnotatedDataFrame", data = feature_ann)
+sample_ann = HC2@meta.data
+Mono_pd = new("AnnotatedDataFrame", data =sample_ann)
+Mono.cds = newCellDataSet(Mono_matrix,phenoData =Mono_pd,featureData =Mono_fd,expressionFamily=negbinomial.size())
+
+Mono.cds = estimateSizeFactors(Mono.cds)                                     
+Mono.cds = estimateDispersions(Mono.cds)
+disp_table = dispersionTable(Mono.cds)                                   
+unsup_clustering_genes = subset(disp_table, mean_expression >= 1)
+Mono.cds = setOrderingFilter(Mono.cds, unsup_clustering_genes$gene_id)
+Mono.cds = reduceDimension( Mono.cds, max_components = 2,method = 'DDRTree')  
+Mono.cds = orderCells(Mono.cds,root_state=3)      
+
+plot_cell_trajectory(Mono.cds, color_by = "State",cell_size = 1,show_branch_points=T)
+plot_cell_trajectory(Mono.cds, color_by = "Pseudotime",cell_size = 1,show_branch_points=T)+ 
+  theme(legend.position = "right") + scale_colour_gradient(low = "#FAF5A9", high = "#C52F2D")
+plot_cell_trajectory(Mono.cds, color_by = "Patient",cell_size = 1,show_branch_points=T)+ facet_wrap(~Patient)
+plot_cell_trajectory(Mono.cds, color_by = "MVI",cell_size = 1,show_branch_points=T)+ 
+  scale_color_manual(values=c('#FC6F13','#2BBAD7','#F0C0BD'))
+
+Time_diff <- differentialGeneTest(Mono.cds, cores = 10)
+
+plot_pseudotime_heatmap(Mono.cds[filter(Time_diff,qval==0) %>% rownames(),], 
+                        num_clusters = 4,
+                        show_rownames = T,return_heatmap=T,
+                        hmcols = colorRampPalette(c('#5773D8','white','#C22E31'))(100))
+
+
+######## Figure 5h
+prop = prop.table(table(scdata5$celltype3, scdata5@meta.data[,"orig.ident"]), 2) *100
+prop = data.frame(prop)
+
+cor_frame = data.frame(row.names = as.character(unique(prop$Var1)))
+for (j in as.character(unique(prop$Var1))) {
+  for (i in as.character(unique(prop$Var1))) {
+    a = cbind(filter(prop,Var1 %in% c(j)),filter(prop,Var1 %in% c(i)))
+    a = a[,c(2,1,3,4,6)]
+    cor_frame[j,i] = cor(a$Freq,a$Freq.1 )
+  }
+}
+
+mat = cor_frame['Malignant',] %>% t() %>% data.frame() %>% arrange(Malignant)
+mat2 <- matrix(0, nrow = nrow(mat), ncol = nrow(mat), dimnames = list(rownames(mat),rownames(mat)))
+mat2['Malignant',]  = mat$Malignant
+
+netVisual_circle(mat2, vertex.size.max = 10,vertex.weight = c(1:42),weight.scale = T, label.edge= F,edge.weight.max = 0.4,
+                 color.use = c(colorRampPalette(c('#3D64AC','#DEEEDD'))(37),'#F4F1B3','#F4EDAE','#F5C885','#C73434','black'))
+
+
+
+######## Figure 5j
+exp = AverageExpression(scdata5,group.by = 'orig.ident',features = 'MDK')
+exp = exp$SCT
+
+exp = data.frame(t(exp))
+exp$name = rownames(exp)
+exp$trem2 = filter(prop,Var1 == "TREM2_Macro")$Freq
+
+ggplot(exp,aes(x = trem2,y = t.exp.))+
+  geom_point(size = 5)+
+  geom_smooth(method = lm)+  stat_cor()+ggthemes::theme_few()
+
+
+
+
+
+
+
+
+

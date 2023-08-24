@@ -1,0 +1,203 @@
+######## Figure 6a
+library(scRNAtoolVis)
+library(ggplot2)
+library(ggpubr)
+library(Seurat)
+library(dplyr)
+library(pheatmap)
+
+scdata5 = scdata4[,filter(scdata4@meta.data,celltype3 != c('Other')  & celltype3 != 'Malignant' & celltype3 != 'EPI') %>% rownames(),]
+
+prop = prop.table(table(scdata5$celltype3, scdata5@meta.data[,"orig.ident"]), 2) *100
+prop = data.frame(prop)
+
+cor_frame = data.frame(row.names = as.character(unique(prop$Var1)))
+for (j in as.character(unique(prop$Var1))) {
+  for (i in as.character(unique(prop$Var1))) {
+    a = cbind(filter(prop,Var1 %in% c(j)),filter(prop,Var1 %in% c(i)))
+    a = a[,c(2,1,3,4,6)]
+    cor_frame[j,i] = cor(a$Freq,a$Freq.1 )
+  }
+}
+
+p_value = data.frame(row.names = as.character(unique(prop$Var1)))
+for (j in as.character(unique(prop$Var1))) {
+  for (i in as.character(unique(prop$Var1))) {
+    a = cbind(filter(prop,Var1 %in% c(j)),filter(prop,Var1 %in% c(i)))
+    a = a[,c(2,1,3,4,6)]
+    b = cor.test(a$Freq,a$Freq.1)
+    p_value[j,i] = b[[3]]
+  }
+}
+p_value = round(p_value,3)
+p_value[p_value > 0.1] = 10
+for (i in 1:ncol(p_value)) {
+  cor_frame[p_value[,i] == 10,i] = 0
+}
+
+pheatmap::pheatmap(cor_frame,color = colorRampPalette(c('#303595','white','#CD7158'))(100),
+                   #clustering_method = 'ward',
+                   border =F)
+
+
+
+
+######## Figure 6b
+ssGSEA_Score = gsva(as.matrix(bulk_Data), as.data.frame(program_genes), 
+                    method='ssgsea', kcdf='Gaussian', abs.ranking=TRUE) 
+ssGSEA_Score = as.data.frame(t(ssGSEA_Score)) 
+names(ssGSEA_Score) = c('program_score')
+
+ssGSEA_Score = ssGSEA_Score[rownames(bulk_meta),]
+ssGSEA_Score$OS = bulk_meta$OS 
+ssGSEA_Score$OS.time = bulk_meta$OS.time 
+
+library(survival)
+library(survminer)
+cut = surv_cutpoint(ssGSEA_Score,time = "OS.time",event = "OS",variables = "program_score") 
+sur = surv_categorize(cut) 
+ggsurvplot(survfit(Surv(sur$OS.time,event = sur$OS)~program_score,
+                                 data=sur),
+                         pval = TRUE, 
+                         risk.table = F, 
+                         risk.table.col = "strata", 
+                         ggtheme = theme_few(),
+                         font.x = c(14),font.y = c(14),
+                         font.tickslab = c(14, "black"),
+                         legend = c(0.88,0.9),
+                         legend.title = "", 
+                         palette=c("#ED0000","#00468B"))+ylab('Overall survival')+xlab('Time (day)')+
+  ggtitle('CLAMT Program')
+
+
+
+######## Figure 6c
+ssGSEA_Score = gsva(as.matrix(TCGA), as.data.frame(program_genes), 
+                    method='ssgsea', kcdf='Gaussian', abs.ranking=TRUE) 
+ssGSEA_Score = as.data.frame(t(ssGSEA_Score)) 
+names(ssGSEA_Score) = c('program_score')
+
+ssGSEA_Score = ssGSEA_Score[rownames(TCGA_meta),]
+ssGSEA_Score$MVI = TCGA_meta$vascular_tumor_cell_type
+
+ssGSEA_Score[colnames(TCGA_N),'MVI'] = 'Normal'
+ssGSEA_Score = filter(ssGSEA_Score,MVI %in% c('Micro','None'))
+ssGSEA_Score[ssGSEA_Score$MVI == 'None','MVI'] = 'MVI- HCC'
+ssGSEA_Score[ssGSEA_Score$MVI == 'Micro','MVI'] = 'MVI+ HCC'
+
+ggplot(ssGSEA_Score, aes(x = MVI, y = program_score,fill = MVI)) +  
+  geom_violin(aes(fill = MVI),alpha=0.9,lwd=0.7,width=0.3,color="white")+
+  geom_boxplot(alpha=0,outlier.color = NA, lwd=0.8,width=0.5)+
+  theme_bw()+stat_compare_means()+
+  scale_fill_manual(values=c("#2BBBD8","#FD7013"))+ 
+  scale_color_manual(values=c("#2BBBD8","#FD7013"))+theme_few()+
+  theme(legend.position = "none",axis.text = element_text(color = "black"))+
+  ylab('Estimate of module')+xlab('')+
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.y = element_text(size = 14))
+
+
+
+######## Figure 6d
+library(Seurat)
+library(dplyr)
+library(CellChat)
+MVI = scdata4[,filter(scdata4@meta.data,MVI2 %in% c('Tumor MVI')) %>% rownames()]
+NoMVI = scdata4[,filter(scdata4@meta.data,MVI2 %in% c('Tumor Non-MVI')) %>% rownames()]
+
+data.input  <- MVI@assays$SCT@data
+identity = data.frame(group = MVI$celltype3, row.names = names(MVI$celltype3)) 
+unique(identity$group)
+cellchat <- createCellChat(data.input, meta = identity, group.by = "group")
+cellchat <- addMeta(cellchat, meta = identity)
+cellchat <- setIdent(cellchat, ident.use = "group")
+groupSize <- as.numeric(table(cellchat@idents)) 
+CellChatDB <- CellChatDB.human 
+dplyr::glimpse(CellChatDB$interaction)   # Show the structure of the database
+CellChatDB.use <- CellChatDB
+cellchat@DB <- CellChatDB.use
+cellchat <- subsetData(cellchat)
+future::plan("multiprocess", workers = 4)
+cellchat <- identifyOverExpressedGenes(cellchat)
+cellchat <- identifyOverExpressedInteractions(cellchat)
+cellchat <- projectData(cellchat, PPI.human)
+cellchat <- computeCommunProb(cellchat)
+cellchat <- filterCommunication(cellchat, min.cells = 10)
+cellchat <- computeCommunProbPathway(cellchat)
+cellchat <- aggregateNet(cellchat)
+cellchat_MVI = cellchat
+
+data.input  <- NoMVI@assays$SCT@data
+identity = data.frame(group = NoMVI$celltype3, row.names = names(NoMVI$celltype3)) 
+unique(identity$group)
+cellchat <- createCellChat(data.input, meta = identity, group.by = "group")
+cellchat <- addMeta(cellchat, meta = identity)
+cellchat <- setIdent(cellchat, ident.use = "group")
+groupSize <- as.numeric(table(cellchat@idents)) 
+CellChatDB <- CellChatDB.human 
+dplyr::glimpse(CellChatDB$interaction)   # Show the structure of the database
+CellChatDB.use <- CellChatDB
+cellchat@DB <- CellChatDB.use
+cellchat <- subsetData(cellchat)
+future::plan("multiprocess", workers = 4)
+cellchat <- identifyOverExpressedGenes(cellchat)
+cellchat <- identifyOverExpressedInteractions(cellchat)
+cellchat <- projectData(cellchat, PPI.human)
+cellchat <- computeCommunProb(cellchat)
+cellchat <- filterCommunication(cellchat, min.cells = 10)
+cellchat <- computeCommunProbPathway(cellchat)
+cellchat <- aggregateNet(cellchat)
+cellchat_NonMVI = cellchat
+
+
+object.list <- list(MVI = cellchat_MVI, NonMVI = cellchat_NonMVI)
+cellchat <- mergeCellChat(object.list, add.names = names(object.list))
+
+weight_M = cellchat_MVI@net$weight  %>% data.frame()
+weight_NM = cellchat_NonMVI@net$weight %>% data.frame()
+
+weight = cellchat_MVI@net$weight
+weight2 = cellchat_NonMVI@net$weight
+
+weight = data.frame(weight - weight2)
+weight$name = rownames(weight)
+
+weight = reshape2::melt(weight)
+chordDiagram(filter(weight,value >= 0))
+chordDiagram(filter(weight,value <= 0))
+
+
+
+######## Figure 6e
+ligand_MVI = subsetCommunication(cellchat_MVI)[which(subsetCommunication(cellchat_MVI)$ligand %in% ligand_MVI),]
+ligand_NonMVI = subsetCommunication(cellchat_NonMVI)[which(subsetCommunication(cellchat_NonMVI)$ligand %in% ligand_NonMVI),]
+
+ligand_MVI = group_by(ligand_MVI[,c('ligand','prob')], ligand) %>% summarize_each(funs(median)) %>% data.frame() 
+ligand_NonMVI = group_by(ligand_NonMVI[,c('ligand','prob')], ligand) %>% summarize_each(funs(median)) %>% data.frame() 
+ligand_MVI$class = 'MVI'
+ligand_NonMVI$class = 'NonMVI'
+ligand = rbind(ligand_MVI,ligand_NonMVI)
+ligand$y = rownames(ligand)
+
+ligand$y = factor(ligand$y,levels = ligand$y)
+ggplot(data = ligand,aes(x=y,y= prob,color=as.factor(class),size= prob))+
+  geom_point()+  geom_text_repel(label = ligand$ligand,color = 'black')+ggthemes::theme_few()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

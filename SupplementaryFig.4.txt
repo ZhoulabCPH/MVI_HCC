@@ -1,0 +1,243 @@
+######## Supplementary 4A
+library(Seurat)
+library(dplyr)
+library(ggpubr)
+
+FeaturePlot(Mye2,features = c('C1QC','S100A8','KIT'),reduction = "umap",pt.size = 0.001,
+            cols = c("#FFEFD5","#E6E6FA","#87CEFA","#6495ED","#4169E1","#0000CD","#000080"))+
+  scale_x_continuous("")+scale_y_continuous("")+ 
+  theme_bw()+
+  theme(  panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+          axis.ticks = element_blank(),axis.text = element_blank(),    
+          legend.position = "none",                                       
+          plot.title = element_text(hjust = 0.5,size=14))
+
+Mye2 <- AddModuleScore(Mye2, features = list(c("CD1C","CLEC9A")), name = "DC_score")
+FeaturePlot(Mye2,features = "DC_score1",reduction = "umap",pt.size = 0.001,
+            cols = c("#FFEFD5","#E6E6FA","#87CEFA","#6495ED","#4169E1","#0000CD","#000080"))+
+  scale_x_continuous("")+scale_y_continuous("")+ 
+  theme_bw()+
+  theme(  panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+          axis.ticks = element_blank(),axis.text = element_blank(),    
+          legend.position = "none",                                       
+          plot.title = element_text(hjust = 0.5,size=14))+ggtitle('CD1C,CLEC9A')
+
+
+
+
+
+######## Supplementary 4C
+library(harmony)
+Mye_HC = scHC_cell[,filter(meta,cell_type %in% c('C11_Mye.','C2_Mye.','C20_Mye','C8_Mye.' )) %>% rownames()]
+
+mrna = read.table('mRNA_GRCh38.95.gtf.TXT')
+Mye_HC = Mye_HC[mrna$V14,]
+Mye_HC = CreateSeuratObject(Mye_HC,min.cells = 10)
+
+meta = filter(meta,cell_type %in% c('C11_Mye.','C2_Mye.','C20_Mye','C8_Mye.' ))
+Mye_HC@meta.data = Mye_HC@meta.data[rownames(meta),]
+Mye_HC@meta.data = meta
+
+Mye_HC = SCTransform(Mye_HC) 
+Mye_HC = RunPCA(Mye_HC, features = VariableFeatures(Mye_HC)) 
+Mye_HC = Mye_HC %>% RunHarmony("sample_name", plot_convergence = TRUE,assay.use = "SCT")
+ElbowPlot(Mye_HC)
+Mye_HC = RunUMAP(Mye_HC,reduction = 'harmony',dims = 1:15)
+
+Mye_HC = FindNeighbors(Mye_HC, reduction = "harmony", dims = 1:15)  
+Mye_HC = FindClusters(Mye_HC, resolution = 0.1,algorithm=1) 
+
+Mye_HC2 = Mye_HC[,rownames(filter(Mye_HC@meta.data,SCT_snn_res.0.1 != 5))]
+DimPlot(Mye_HC2, reduction = "umap",group.by = 'meta.cluster',label = T,pt.size = 0.0001)+NoLegend()
+
+
+
+
+
+######## Supplementary 4D
+library("sscVis")
+library("data.table")
+library("grid")
+library("cowplot")
+library("ggrepel")
+library("readr")
+library("plyr")
+library("ggpubr")
+library("ggplot2")
+
+out.prefix <- "Fig1"
+OR.CD8.list <- do.tissueDist(cellInfo.tb = Mye_HC2@meta.data,
+                             out.prefix= sprintf("%s.STARTRAC.dist.T.baseline.CD8",out.prefix),
+                             pdf.width=4,pdf.height=6,verbose=1)
+
+pheatmap(OR.CD8.list$OR.dist.mtx,cluster_cols = F,border =F,color  = colorRampPalette(viridis::viridis(7))(100),scale = 'row')
+
+
+
+######## Supplementary 4E
+library(GSVA)
+library(survival)
+library(survminer)
+ssGSEA_Score = gsva(as.matrix(bulk_Expr), list(TREM2_Macro_signature,LAMP3_DC_signature,cycling_DC_signature), 
+                    method='ssgsea', kcdf='Gaussian', abs.ranking=TRUE) 
+ssGSEA_Score = as.data.frame(t(ssGSEA_Score)) 
+names(ssGSEA_Score) = c('TREM2_Macro','LAMP3_DC','cycling_DC')
+
+ssGSEA_Score = ssGSEA_Score[rownames(bulk_meta),]
+ssGSEA_Score$OS = bulk_meta$OS
+ssGSEA_Score$OS.time = bulk_meta$OS.time
+
+ssGSEA_Score$OS = as.numeric(ssGSEA_Score$OS)
+ssGSEA_Score$OS.time = as.numeric(ssGSEA_Score$OS.time)
+
+cut = surv_cutpoint(ssGSEA_Score,time = "OS.time",event = "OS",variables = "TREM2_Macro") 
+sur = surv_categorize(cut) 
+
+ggsurvplot(survfit(Surv(sur$OS.time,event = sur$OS)~TREM2_Macro,
+                                 data=sur),
+                         pval = TRUE, 
+                         risk.table = F, 
+                         risk.table.col = "strata", 
+                         ggtheme = theme_few(),
+                         font.x = c(14),font.y = c(14),
+                         font.tickslab = c(14, "black"),
+                         legend = c(0.88,0.9),
+                         legend.title = "", 
+                         palette=c("#ED0000","#00468B"))+ylab('Overall survival')+xlab('Time (day)')
+
+
+cut = surv_cutpoint(ssGSEA_Score,time = "OS.time",event = "OS",variables = "LAMP3_DC") 
+sur = surv_categorize(cut) 
+
+ggsurvplot(survfit(Surv(sur$OS.time,event = sur$OS)~LAMP3_DC,
+                                 data=sur),
+                         pval = TRUE, 
+                         risk.table = F, 
+                         risk.table.col = "strata", 
+                         ggtheme = theme_few(),
+                         font.x = c(14),font.y = c(14),
+                         font.tickslab = c(14, "black"),
+                         legend = c(0.88,0.9),
+                         legend.title = "", 
+                         palette=c("#ED0000","#00468B"))+ylab('Overall survival')+xlab('Time (day)')
+
+cut = surv_cutpoint(ssGSEA_Score,time = "OS.time",event = "OS",variables = "cycling_DC") 
+sur = surv_categorize(cut) 
+
+ggsurvplot(survfit(Surv(sur$OS.time,event = sur$OS)~cycling_DC,
+                                 data=sur),
+                         pval = TRUE, 
+                         risk.table = F, 
+                         risk.table.col = "strata", 
+                         ggtheme = theme_few(),
+                         font.x = c(14),font.y = c(14),
+                         font.tickslab = c(14, "black"),
+                         legend = c(0.88,0.9),
+                         legend.title = "", 
+                         palette=c("#ED0000","#00468B"))+ylab('Overall survival')+xlab('Time (day)')
+
+
+
+
+
+
+######## Supplementary 4F
+ssGSEA_Score = gsva(as.matrix(TCGA_HC), list(TREM2_Macro_signature,LAMP3_DC_signature,cycling_DC_signature), 
+                    method='ssgsea', kcdf='Gaussian', abs.ranking=TRUE) 
+ssGSEA_Score = as.data.frame(t(ssGSEA_Score)) 
+names(ssGSEA_Score) = c('TREM2_Macro','LAMP3_DC','cycling_DC')
+
+
+TCGA_meta = TCGA_meta[rownames(ssGSEA_Score),]
+ssGSEA_Score$MVI = TCGA_meta$vascular_tumor_cell_type
+ssGSEA_Score = data.frame(ssGSEA_Score)
+ssGSEA_Score[colnames(TCGA_N),'MVI'] = 'Normal'
+ssGSEA_Score = filter(ssGSEA_Score,MVI %in% c('Micro','None'))
+ssGSEA_Score[ssGSEA_Score$MVI == 'None','MVI'] = 'MVI- HCC'
+ssGSEA_Score[ssGSEA_Score$MVI == 'Micro','MVI'] = 'MVI+ HCC'
+
+ggplot(ssGSEA_Score, aes(x = MVI, y = TREM2_Macro,fill = MVI)) +  
+  geom_violin(aes(fill = MVI),alpha=0.9,lwd=0.7,width=0.3,color="white")+
+  geom_boxplot(alpha=0,outlier.color = NA, lwd=0.8,width=0.5)+
+  theme_bw()+stat_compare_means(method.args = list(alternative = "greater"))+
+  scale_fill_manual(values=c("#2BBBD8","#FD7013"))+ 
+  scale_color_manual(values=c("#2BBBD8","#FD7013"))+theme_few()+
+  theme(legend.position = "none",axis.text = element_text(color = "black"))+
+  ylab('Estimate of module')+xlab('')+
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.y = element_text(size = 14))
+
+ggplot(ssGSEA_Score, aes(x = MVI, y = LAMP3_DC,fill = MVI)) +  
+  geom_violin(aes(fill = MVI),alpha=0.9,lwd=0.7,width=0.3,color="white")+
+  geom_boxplot(alpha=0,outlier.color = NA, lwd=0.8,width=0.5)+
+  theme_bw()+stat_compare_means(method.args = list(alternative = "greater"))+
+  scale_fill_manual(values=c("#2BBBD8","#FD7013"))+ 
+  scale_color_manual(values=c("#2BBBD8","#FD7013"))+theme_few()+
+  theme(legend.position = "none",axis.text = element_text(color = "black"))+
+  ylab('Estimate of module')+xlab('')+
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.y = element_text(size = 14))
+
+
+
+ggplot(ssGSEA_Score, aes(x = MVI, y = cycling_DC,fill = MVI)) +  
+  geom_violin(aes(fill = MVI),alpha=0.9,lwd=0.7,width=0.3,color="white")+
+  geom_boxplot(alpha=0,outlier.color = NA, lwd=0.8,width=0.5)+
+  theme_bw()+stat_compare_means(method.args = list(alternative = "greater"))+
+  scale_fill_manual(values=c("#2BBBD8","#FD7013"))+ 
+  scale_color_manual(values=c("#2BBBD8","#FD7013"))+theme_few()+
+  theme(legend.position = "none",axis.text = element_text(color = "black"))+
+  ylab('Estimate of module')+xlab('')+
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.y = element_text(size = 14))
+
+
+
+
+
+
+
+######## Supplementary 4G
+Mono = Mye2[,filter(Mye2@meta.data,celltype2 == 'Monocyte') %>% rownames()]
+Mono = SCTransform(Mono,vars.to.regress = c("percent.mt", "nFeature_RNA","nCount_RNA"))
+Mono = RunPCA(Mono, features = VariableFeatures(Mono)) 
+ElbowPlot(Mono,ndims = 50)
+
+Mono = RunUMAP(Mono, reduction = "harmony",dims = 1:30)
+Mono = FindNeighbors(Mono, reduction = "harmony", dims = 1:30)             
+Mono = FindClusters(Mono, resolution = 0.1,algorithm=1)
+
+Mono2 =  Mono[,filter(Mono@meta.data,SCT_snn_res.0.1 != '3') %>% rownames()]
+
+Mono2 = SCTransform(Mono2,vars.to.regress = c("percent.mt", "nFeature_RNA","nCount_RNA"))
+Mono2 = RunPCA(Mono2, features = VariableFeatures(Mono2)) 
+ElbowPlot(Mono2,ndims = 50)
+Mono2 = RunUMAP(Mono2, reduction = "harmony",dims = 1:20)
+Mono2 = FindNeighbors(Mono2, reduction = "harmony", dims = 1:20)             
+Mono2 = FindClusters(Mono2, resolution = 0.1,algorithm=1)
+
+Mono2@meta.data[Mono2$SCT_snn_res.0.1 %in% c(0), 'celltype2'] = 'VCAN_Mono'
+Mono2@meta.data[Mono2$SCT_snn_res.0.1 %in% c(1), 'celltype2'] = 'FCGR3A_Mono'
+Mono2@meta.data[Mono2$SCT_snn_res.0.1 %in% c(2), 'celltype2'] = 'FCGR3B_Mono'
+
+
+DimPlot(Mono2, reduction = "umap",group.by = 'celltype2',label = T)+NoLegend()
+
+
+
+######## Supplementary 4H
+library(scRNAtoolVis)
+ jjDotPlot(Mono2,id = 'celltype2', dot.col = c("#0E6DAE",'white','#C0293B'),xtree=F,ytree = F,
+          gene = c('HLA-DPB1','LST1','CD52','IFITM3',   # FCGR3A_Mono   
+                   'FCGR3B','TXNIP','G0S2','CST7',      # FCGR3B_Mono
+                   'VCAN','FCN1','S100A12','THBS1'))    # VCAN_Mono                           
+
+
+
+
+
+
+

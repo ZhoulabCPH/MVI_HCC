@@ -1,0 +1,336 @@
+######## Figure 3a
+library(scRNAtoolVis)
+library(ggplot2)
+library(ggpubr)
+library(Seurat)
+library(dplyr)
+library(pheatmap)
+library(harmony)
+Mye = scdata3[,filter(scdata3@meta.data,celltype2 %in% c('Myeloid')) %>% rownames()]
+Mye = SCTransform(Mye, vars.to.regress = c("percent.mt", "nFeature_RNA","nCount_RNA")) 
+Mye = RunPCA(Mye, features = VariableFeatures(Mye)) 
+ElbowPlot(Mye,ndims = 50)
+
+library(harmony)
+Mye@meta.data[Mye$orig.ident %in%c('1NT','T1'),'Patient' ] = 'P1'
+Mye@meta.data[Mye$orig.ident %in%c('NT2','T2'),'Patient' ] = 'P2'
+Mye@meta.data[Mye$orig.ident %in%c('NT3','T3'),'Patient' ] = 'P3'
+Mye@meta.data[Mye$orig.ident %in%c('NT4','T4'),'Patient' ] = 'P4'
+Mye@meta.data[Mye$orig.ident %in%c('NT5','T5'),'Patient' ] = 'P5'
+
+Mye = Mye %>% RunHarmony("Patient", plot_convergence = TRUE,assay.use = "SCT")
+Mye = RunUMAP(Mye, reduction = "harmony",dims = 1:25)
+ElbowPlot(Mye,ndims = 50)
+
+rb.genes <- rownames(Mye)[grep("^RP[SL]",rownames(Mye))]
+mt.genes <- rownames(Mye)[grep("^MT",rownames(Mye))]
+
+Mye2 = Mye[(!(rownames(Mye)  %in% c(rb.genes,mt.genes)))]  
+
+Mye2 = FindNeighbors(Mye2, reduction = "harmony", dims = 1:25)             
+Mye2 = FindClusters(Mye2, resolution = 0.6,algorithm=1)
+DimPlot(Mye2, reduction = "umap",group.by = 'SCT_snn_res.0.6',label = T)+NoLegend()
+
+
+Mye2@meta.data[Mye2$SCT_snn_res.0.6 == 10, 'celltype2'] = 'Cycling'
+Mye2@meta.data[Mye2$SCT_snn_res.0.6 %in% c(7,11,1), 'celltype2'] = 'DC'
+
+Mye2@meta.data[Mye2$SCT_snn_res.0.6 %in% c(0,8,12,2,4,6), 'celltype2'] = 'Macrophage'
+
+Mye2@meta.data[Mye2$SCT_snn_res.0.6 %in% c(3,5,9), 'celltype2'] = 'Monocyte'
+Mye2@meta.data[Mye2$SCT_snn_res.0.6 %in% c(13), 'celltype2'] = 'Mast'
+
+DimPlot(Mye2,group.by = 'celltype2',cols = c('#1C75B1','#FF7E0A','#D33A30','#FFBC78'),label = T)+NoLegend()
+
+
+######## Figure 3b
+Macro = Mye2[,filter(Mye2@meta.data,celltype2 == 'Macrophage') %>% rownames()]
+Macro = SCTransform(Macro,vars.to.regress = c("percent.mt", "nFeature_RNA","nCount_RNA"))
+Macro = RunPCA(Macro, features = VariableFeatures(Macro)) 
+ElbowPlot(Macro,ndims = 50)
+
+Macro = RunUMAP(Macro, reduction = "harmony",dims = 1:30)
+Macro = FindNeighbors(Macro, reduction = "harmony", dims = 1:30)             
+Macro = FindClusters(Macro, resolution = 0.3,algorithm=1)
+
+DimPlot(Macro, reduction = "umap",group.by = 'SCT_snn_res.0.3',label = T)+NoLegend()
+
+Idents(Macro) = 'SCT_snn_res.0.3'
+marker = FindMarkers(Macro,ident.1 = 5)
+marker$de = marker$pct.1-marker$pct.2
+
+top = marker %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC ) 
+
+FeaturePlot(Macro, reduction = "umap", features = c("MARCO")) 
+FeaturePlot(Macro, reduction = "umap", features = c("APOE")) 
+FeaturePlot(Macro, reduction = "umap", features = c("IL1B")) 
+FeaturePlot(Macro, reduction = "umap", features = c("HLA-DQA2")) 
+
+FeaturePlot(Macro, reduction = "umap", features = c("RNASE1")) 
+FeaturePlot(Macro, reduction = "umap", features = c("TREM2")) 
+FeaturePlot(Macro, reduction = "umap", features = c("ACP5")) 
+
+Macro@meta.data[Macro$SCT_snn_res.0.3 %in% c(3), 'celltype2'] = 'IL1B_Macro'
+Macro@meta.data[Macro$SCT_snn_res.0.3 %in% c(1,5), 'celltype2'] = 'TREM2_Macro'
+Macro@meta.data[Macro$SCT_snn_res.0.3 %in% c(2), 'celltype2'] = 'AP_Macro'
+Macro@meta.data[Macro$SCT_snn_res.0.3 %in% c(0,4), 'celltype2'] = 'MACRO_Macro'
+
+DimPlot(Macro, reduction = "umap",group.by = 'celltype2',label = T,pt.size = 0.0001,
+        cols = c('#BEBCDE','#3C86BD','#9ECBE2','#8C6CAF'))+NoLegend()
+
+
+
+######## Figure 3c
+library(scRNAtoolVis)
+ jjDotPlot(Macro,id = 'celltype2', dot.col = c("#0E6DAE",'white','#C0293B'),xtree=F,ytree = F,
+          gene = c('HLA-DRB6','HLA-DPB1','HLA-DRB1',       # AP_Macro
+                   'IL1B','CCL3','CXCL2',                # IL1B_Macro
+                   'MARCO','CD163','VCAM1',              # MARCO_MARCO
+                   'TREM2','APOE','APOC1'))                 # TREM2_Macro          
+
+
+######## Figure 3d
+library("sscVis")
+library("data.table")
+library("grid")
+library("cowplot")
+library("ggrepel")
+library("readr")
+library("plyr")
+library("ggpubr")
+library("ggplot2")
+library("pheatmap")
+OR.CD8.list <- do.tissueDist(cellInfo.tb = Macro@meta.data,
+                             out.prefix= sprintf("%s.STARTRAC.dist.T.baseline.CD8",out.prefix),
+                             pdf.width=4,pdf.height=6,verbose=1)
+
+
+pheatmap(OR.CD8.list$OR.dist.mtx,cluster_cols = F,border =F,color  = colorRampPalette(viridis::viridis(7))(100),scale = 'row')
+
+
+######## Figure 3f
+library(org.Hs.eg.db)
+library(clusterProfiler)
+library(enrichplot)
+gmt <- read.gmt("h.all.v7.4.symbols.gmt")
+gmt2 <- read.gmt("c5.go.bp.v2022.1.Hs.symbols.gmt")
+gmt3 <- read.gmt("c2.cp.kegg.v2022.1.Hs.symbols.gmt")
+
+Idents(Macro) = 'celltype2'
+TREM_marker = FindMarkers(Macro,ident.1 = 'TREM2_Macro')
+TREM_marker = filter(TREM_marker,p_val_adj <= .05)
+
+TREM_marker$SYMBOL = rownames(TREM_marker)
+names(TREM_marker)[2] = c("logFC" )
+
+TREM_marker <- TREM_marker %>% arrange(desc(logFC))
+geneList = TREM_marker$logFC 
+names(geneList) <- TREM_marker$SYMBOL 
+
+Macro_gsea <- GSEA(geneList,TERM2GENE = gmt) 
+Macro_gsea@result %>% View
+
+library(GseaVis)
+gseaNb(object = Macro_gsea,
+       geneSetID = c('HALLMARK_COAGULATION','HALLMARK_ADIPOGENESIS','HALLMARK_KRAS_SIGNALING_UP'))
+
+gseaNb(object = Macro_gsea,
+       geneSetID = c('HALLMARK_TNFA_SIGNALING_VIA_NFKB','HALLMARK_INTERFERON_GAMMA_RESPONSE','HALLMARK_INFLAMMATORY_RESPONSE'),
+       curveCol = jjAnno::useMyCol('paired',3))
+
+
+######## Figure 3g
+m_df = msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:KEGG") 
+m_df2 = msigdbr(species = "Homo sapiens", category = "H") 
+m_df = rbind(m_df,m_df2)
+
+META = filter(m_df2,gs_name %in% c('HALLMARK_BILE_ACID_METABOLISM','HALLMARK_CHOLESTEROL_HOMEOSTASIS','HALLMARK_FATTY_ACID_METABOLISM',
+                            'HALLMARK_GLYCOLYSIS','HALLMARK_HEME_METABOLISM','HALLMARK_XENOBIOTIC_METABOLISM','HALLMARK_OXIDATIVE_PHOSPHORYLATION',
+                            'HALLMARK_ANGIOGENESIS'))
+
+expr <- as.data.frame(Macro@assays$SCT@data) 
+msigdbr_list = split(x = META$gene_symbol, f = META$gs_name)
+msigdbr_list = split(x = m_df$gene_symbol, f = m_df$gs_name)
+
+expr=as.matrix(expr) 
+kegg <- gsva(expr, msigdbr_list, kcdf="Gaussian",method = "gsva",parallel.sz=100)
+
+data1  = cbind(apply(kegg[,rownames(filter(Macro@meta.data,celltype2 == 'AP_Macro'))], 1, mean) %>% data.frame(),
+               apply(kegg[,rownames(filter(Macro@meta.data,celltype2 == 'IL1B_Macro'))], 1, mean) %>% data.frame(),
+               apply(kegg[,rownames(filter(Macro@meta.data,celltype2 == 'MACRO_Macro'))], 1, mean) %>% data.frame(),
+               apply(kegg[,rownames(filter(Macro@meta.data,celltype2 == 'TREM2_Macro'))], 1, mean) %>% data.frame())
+
+names(data1) = c('AP_Macro','IL1B_Macro','MACRO_Macro','TREM2_Macro')
+pheatmap(data1[2:8,] , 
+         color  = colorRampPalette(c('#2E80B9','white','#D84234'))(100),scale = 'row',
+         border=F,
+         cluster_cols = F, cluster_rows = T,
+         show_rownames = T, show_colnames = T)
+
+
+######## Figure 3i
+DC = Mye3[,filter(Mye3@meta.data,celltype2 %in%  c('DC')) %>% rownames()]
+DC = SCTransform(DC,vars.to.regress = c("percent.mt", "nFeature_RNA","nCount_RNA"))
+DC = RunPCA(DC, features = VariableFeatures(DC)) 
+ElbowPlot(DC,ndims = 50)
+
+DC = RunUMAP(DC, reduction = "harmony",dims = 1:25)
+DC = FindNeighbors(DC, reduction = "harmony", dims = 1:25)             
+DC = FindClusters(DC, resolution = 2,algorithm=1)
+
+DC@meta.data[DC$SCT_snn_res.1.5 %in% c(3), 'celltype2'] = 'Cycling_DC'
+DC@meta.data[DC$SCT_snn_res.1.5 %in% c(15,13,10,6,9), 'celltype2'] = 'CLEC9A_DC'
+DC@meta.data[DC$SCT_snn_res.1.5 %in% c(16), 'celltype2'] = 'LAMP3_DC'
+DC@meta.data[DC$SCT_snn_res.1.5 %in% c(11,7,8,4,14,12,2,1,0,5), 'celltype2'] = 'CD1C_DC'
+
+DC@meta.data[DC$SCT_snn_res.0.3 %in% c(3), 'celltype2'] = 'Cycling_DC'
+DC@meta.data[DC$SCT_snn_res.0.3 %in% c(1), 'celltype2'] = 'CLEC9A_DC'
+DC@meta.data[DC$SCT_snn_res.0.3 %in% c(16), 'celltype2'] = 'LAMP3_DC'
+DC@meta.data[DC$SCT_snn_res.0.3 %in% c(0,2,4), 'celltype2'] = 'CD1C_DC'
+
+DimPlot(DC, reduction = "umap",group.by = 'celltype2',label = T,pt.size = 0.0001,
+        cols = c('#E0C987','#F9B661','#9DD3A8','#8BC24C'))
+
+
+######## Figure 3j
+OR.CD8.list <- do.tissueDist(cellInfo.tb = DC@meta.data,
+                             out.prefix= sprintf("%s.STARTRAC.dist.T.baseline.CD8",out.prefix),
+                             pdf.width=4,pdf.height=6,verbose=1)
+
+pheatmap(OR.CD8.list$OR.dist.mtx,cluster_cols = F,border =F,color  = colorRampPalette(viridis::viridis(7))(100),scale = 'row')
+
+
+
+######## Figure 3k
+ jjDotPlot(DC,id = 'celltype2', dot.col = c("#0E6DAE",'white','#C0293B'),xtree=F,ytree = F,
+          gene = c('CD1C','FCER1A','CLEC10A',               # CD1C_DC
+                   'CLEC9A','CPVL','WDFY4',                   # CLEC9A_DC
+                   'STMN1','MKI67','TOP2A',                 # Cycling_DC
+                   'LAMP3','CCR7','IDO1'))                     # TREM2_Macro          
+
+
+
+######## Figure 3l
+library(readxl)
+DC_signature = read_excel('signature.xlsx') %>% data.frame()
+DC_signature = list(DC_signature$DC.activation %>% na.omit() %>% as.character(),
+                    DC_signature$DC.migration %>% na.omit() %>% as.character(),
+                    DC_signature$DC.tolorgenic %>% na.omit() %>% as.character())
+
+DC <- AddModuleScore(object = DC, features = DC_signature)
+
+library(jjPlot)
+jjplot_vln = DC@meta.data[,c('Cluster1','Cluster2','Cluster3')] %>% data.frame()
+
+jjplot_vln = jjplot_vln[rownames(DC@meta.data),]
+jjplot_vln$id = DC$celltype2
+jjplot_vln = reshape2::melt(jjplot_vln)
+names(jjplot_vln) = c( 'id','gene','exp')
+map_df(unique(jjplot_vln$id),function(x){
+  tmp <- jjplot_vln %>% filter(id == x)
+  map_df(unique(tmp$gene),function(j){
+    tmp1 <- tmp %>% filter(gene == j)
+    # calculate median expressions
+    tmp1$median_exp <- mean(tmp1$exp)
+    return(tmp1)
+  }) -> res
+  return(res)
+}) -> jjplot_vln
+ggplot(jjplot_vln,aes(x = gene,y = id)) +
+  geom_jjviomap(aes(val = exp,fill = median_exp),
+                width = 1) +
+  scale_fill_gradient(low = 'white',high = '#B92D30') +
+  theme_bw(base_size = 14) +
+  theme(panel.grid = element_blank(),
+        axis.text.x = element_text(angle = 90,hjust = 1,vjust = 0.5)) +
+  coord_fixed()
+
+
+
+DC = CellCycleScoring(object = DC, 
+                      g2m.features = cc.genes$g2m.genes,
+                      s.features = cc.genes$s.genes)
+
+
+
+library(jjPlot)
+jjplot_vln = DC@meta.data[,c('S.Score','G2M.Score','ANTIGEN1')]%>% data.frame()
+jjplot_vln$S.Score = NULL
+jjplot_vln = jjplot_vln[rownames(DC@meta.data),]
+jjplot_vln$id = DC$celltype2
+jjplot_vln = reshape2::melt(jjplot_vln)
+names(jjplot_vln) = c( 'id','gene','exp')
+map_df(unique(jjplot_vln$id),function(x){
+  tmp <- jjplot_vln %>% filter(id == x)
+  map_df(unique(tmp$gene),function(j){
+    tmp1 <- tmp %>% filter(gene == j)
+    # calculate median expressions
+    tmp1$median_exp <- mean(tmp1$exp)
+    return(tmp1)
+  }) -> res
+  return(res)
+}) -> jjplot_vln
+
+ggplot(jjplot_vln,aes(x = gene,y = id)) +
+  geom_jjviomap(aes(val = exp,fill = median_exp),
+                width = 1) +
+  scale_fill_gradient(low = 'white',high = '#B92D30') +
+  theme_bw(base_size = 14) +
+  theme(panel.grid = element_blank(),
+        axis.text.x = element_text(angle = 90,hjust = 1,vjust = 0.5)) +
+  coord_fixed()
+ggplot(jjplot_vln,aes(x = gene,y = id)) +
+  geom_jjviomap(aes(val = exp,fill = median_exp),
+                width = 1) +
+  scale_fill_gradient(low = '#F6CFCA',high = '#B92D30') +
+  theme_bw(base_size = 14) +
+  theme(panel.grid = element_blank(),
+        axis.text.x = element_text(angle = 90,hjust = 1,vjust = 0.5)) +
+  coord_fixed()
+
+
+
+######## Figure 3m
+MHC = c('HLA-A','HLA-B','HLA-C','HLA-E','HLA-F',
+        'HLA-DOA','HLA-DQA2','HLA-DMA','HLA-DQA1','HLA-DQB2','HLA-DPA1','HLA-DRA','HLA-DOB','HLA-DMB',
+        'HLA-DPB1','HLA-DQB1','HLA-DPA1','HLA-DRA','HLA-DRB1','HLA-DRB5')
+
+HLA = AverageExpression(DC,features = MHC,group.by = 'celltype2')
+HLA = HLA$SCT
+pheatmap(HLA, border=F,
+         color  = colorRampPalette(c('#2E80B9','white','#D84234'))(100),scale = 'row',
+         cluster_cols = F, cluster_rows = T,
+         show_rownames = T, show_colnames = T)
+
+
+######## Figure 3p
+Idents(Mye3) = 'MVI'
+markers = FindMarkers(Mye3,ident.1 = c('T_MVI'),ident.2 = c('T_Non-MVI'),logfc.threshold = 0)
+
+ggplot(markers, aes(x=avg_log2FC, y= -log10(p_val_adj ), colour = avg_log2FC)) + 
+  geom_point(size = markers$avg_log2FC) +
+  scale_color_gradient2(midpoint=0, low="#313695", mid="#f0f0f0",high="#a50026")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

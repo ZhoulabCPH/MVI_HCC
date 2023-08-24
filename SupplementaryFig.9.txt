@@ -1,0 +1,55 @@
+library(Seurat)
+library(dplyr)
+library(ggpubr)
+
+HCC6NR = Read10X('HCC6NR/filtered_feature_bc_matrix')
+image <- Read10X_Image(image.dir = file.path("HCC6NR/", "spatial"), filter.matrix = TRUE)
+HCC6NR <- CreateSeuratObject(counts = HCC6NR, assay = "Spatial")
+image <- image[Cells(x = HCC6NR)]
+DefaultAssay(HCC6NR = image) <- "Spatial"
+HCC6NR[["slice1"]] <- image
+
+SpatialFeaturePlot(HCC6NR, features = "nFeature_Spatial")
+HCC6NR = SCTransform(HCC6NR, assay = "Spatial", return.only.var.genes = FALSE, verbose = FALSE)
+
+HCC6NR <- RunPCA(HCC6NR,  verbose = FALSE)
+HCC6NR <- RunUMAP(HCC6NR, reduction = "pca", dims = 1:10)
+
+HCC7NR = Read10X('HCC7NR/filtered_feature_bc_matrix')
+image <- Read10X_Image(image.dir = file.path("HCC7NR/", "spatial"), filter.matrix = TRUE)
+HCC7NR <- CreateSeuratObject(counts = HCC7NR, assay = "Spatial")
+image <- image[Cells(x = HCC7NR)]
+DefaultAssay(HCC7NR = image) <- "Spatial"
+HCC7NR[["slice1"]] <- image
+
+SpatialFeaturePlot(HCC7NR, features = "nFeature_Spatial")
+HCC7NR = SCTransform(HCC7NR, assay = "Spatial", return.only.var.genes = FALSE, verbose = FALSE)
+
+HCC7NR <- RunPCA(HCC7NR,  verbose = FALSE)
+HCC7NR <- RunUMAP(HCC7NR, reduction = "pca", dims = 1:10)
+
+gene = list(filter(Stromal_marker,cluster == 'mCAF' & avg_log2FC >= 0.58 & p_val_adj <= 0.05)$gene,          
+            filter(Stromal_marker,cluster == 'Arterial_i_EC' & avg_log2FC >= 0.58 & p_val_adj <= 0.05)$gene,
+            filter(Tcell_marker,cluster == 'cycling_T' & avg_log2FC >= 0.58 & p_val_adj <= 0.05)$gene,
+            filter(Tcell_marker,cluster == 'Treg' & avg_log2FC >= 0.58 & p_val_adj <= 0.05)$gene,
+            filter(DC_marker,cluster == 'LAMP3_DC' & avg_log2FC >= 0.58 & p_val_adj <= 0.05)$gene)
+
+
+HCC6NR = AddModuleScore(HCC6NR ,features = gene)
+HCC7NR = AddModuleScore(HCC7NR ,features = gene)
+
+
+SpatialFeaturePlot(HCC6NR, features = c('Cluster1','Cluster2','Cluster3','Cluster4','Cluster5'),alpha = c(0.2,1),pt.size = 2) + 
+                                 theme(  panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+                                              axis.ticks = element_blank(),axis.text = element_blank(),   legend.position = "none")
+
+SpatialFeaturePlot(HCC7NR, features = c('Cluster1','Cluster2','Cluster3','Cluster4','Cluster5'),alpha = c(0.2,1),pt.size = 2) + 
+                                 theme(  panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+                                              axis.ticks = element_blank(),axis.text = element_blank(),   legend.position = "none")
+
+
+
+
+
+
+

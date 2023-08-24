@@ -1,0 +1,19 @@
+######## Figure 7a
+library(Seurat)
+library(dplyr)
+library(CellChat)
+
+netVisual_bubble(cellchat,sources.use = c('mCAF','Arterial EC'),
+                 targets.use = c('CD1C_DC','CLEC9A_DC','Cycling_DC','LAMP3_DC'),comparison = c(1,2), angle.x = 45)
+
+
+######## Figure 7b
+netVisual_bubble(cellchat,sources.use = c('LAMP3_DC'),
+                 targets.use = c('Activated T RGS1','Treg','IL7R Tmem','T naive','Tcyc','TNF Tmem','Inflamed NK','Mature NK','NKcyc'),comparison = c(1,2), angle.x = 45)
+
+
+
+######## Figure 7c
+netVisual_bubble(cellchat,sources.use = c('mCAF','Arterial EC'),
+                 targets.use = c('Activated T RGS1','Treg','IL7R Tmem','T naive','Tcyc','TNF Tmem','Inflamed NK','Mature NK','NKcyc'),comparison = c(1,2), angle.x = 45)
+

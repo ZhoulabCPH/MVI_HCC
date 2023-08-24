@@ -1,0 +1,205 @@
+######## Supplementary 2A
+library(Seurat)
+library(dplyr)
+library(ggpubr)
+
+cd8 = Tcell3[,rownames(filter(Tcell3@meta.data,celltype3 %in% c('RGS1_Tex','IL7R_Tmem','cycling_T','TNF Tmem')))]
+CYT=c('CD160','FCGR3A','FGFBP2','GNLY','GZMB','GZMH','GZMK','KLRG1','NCR3','NKG7','PRF1','TBX21') # DOI:10.1038/s41590-022-01312-0
+cd8 <- AddModuleScore(cd8, features = list(c(CYT)), name = "CYT")
+VlnPlot(cd8,features = 'CYT1',group.by = 'celltype3',pt.size = 0)+NoLegend()
+
+exhausted = readxl::read_excel('E:/学习/单细胞/单细胞肝癌/Figure/TEX_stage.xlsx') %>% data.frame()
+Precursor_exhausted = exhausted$Decoding.the.multicellular.ecosystem.of.vena.caval.tumor.thrombus.in.clear.cell.renal.cell.carcinoma.by.single.cell.RNA.sequencing[2:35]
+Terminally_exhausted = exhausted$...2[2:201]
+cd8 <- AddModuleScore(cd8, features = list(c(Precursor_exhausted)), name = "Precursor_exhausted") # DOI:10.1186/s13059-022-02651-9
+cd8 <- AddModuleScore(cd8, features = list(c(Terminally_exhausted)), name = "Terminally_exhausted")
+VlnPlot(cd8,features = 'Precursor_exhausted1',group.by = 'celltype3',pt.size = 0)+NoLegend()
+VlnPlot(cd8,features = 'Terminally_exhausted1',group.by = 'celltype3',pt.size = 0)+NoLegend()
+
+
+######## Supplementary 2B
+library(monocle)
+cd8 = Tcell3[,rownames(filter(Tcell3@meta.data,celltype3 %in% c('RGS1_Tex','IL7R_Tmem','cycling_T','TNF Tmem')))]
+Mono_matrix = as(as.matrix(GetAssayData(cd8 ,slot = "count")), 'sparseMatrix')
+feature_ann = data.frame(gene_id=rownames(Mono_matrix),gene_short_name=rownames(Mono_matrix))
+rownames(feature_ann) = rownames(Mono_matrix)
+Mono_fd = new("AnnotatedDataFrame", data = feature_ann)
+sample_ann = cd8@meta.data
+Mono_pd = new("AnnotatedDataFrame", data =sample_ann)
+Mono.cds = newCellDataSet(Mono_matrix,phenoData =Mono_pd,featureData =Mono_fd,expressionFamily=negbinomial.size())
+
+Mono.cds = estimateSizeFactors(Mono.cds)                                        
+Mono.cds = estimateDispersions(Mono.cds)
+disp_table = dispersionTable(Mono.cds)                              
+unsup_clustering_genes = subset(disp_table, mean_expression >= 0.5)
+Mono.cds = setOrderingFilter(Mono.cds, unsup_clustering_genes$gene_id)
+Mono.cds = reduceDimension( Mono.cds, max_components = 2,method = 'DDRTree')  
+Mono.cds = orderCells(Mono.cds)      
+
+plot_cell_trajectory(Mono.cds, color_by = "celltype3",cell_size = 0.0001,show_branch_points=F)+ 
+  theme(legend.position = "right") + scale_color_manual(values=c('#6761A1','#9BC4DA','#E3C39F','#4189B9'))
+
+
+Pseudotime = pData(Mono.cds)[,c('Pseudotime','celltype3')]
+
+ggplot(Pseudotime, aes(x=Pseudotime,y=celltype3,fill=celltype3))+
+  geom_density_ridges(scale=1) +
+  #geom_vline(xintercept = c(5,10),linetype=2)+
+  scale_y_discrete("")+
+  theme_minimal()+
+  theme(
+    panel.grid = element_blank())
+
+
+
+
+######## Supplementary 2C
+Time_diff <- differentialGeneTest(Mono.cds, cores = 1)
+Time_genes <- top_n(Time_diff, n = 100, desc(qval)) %>% pull(gene_short_name) %>% as.character()
+
+plot_pseudotime_heatmap(Mono.cds[c('PDCD1','TIGIT','HAVCR2','CTLA4','LAG3','TOX',Time_genes),], 
+                            num_clusters = 4,
+                            show_rownames = T,return_heatmap=T,
+                            hmcols = colorRampPalette(c('#5773D8','white','#C22E31'))(100))
+
+
+######## Supplementary 2D
+Tcell_HC = scHC_cell[,filter(meta,cell_type %in% c('C0_Tcell','C1_Tcell','C19_Tcell','C3_Tcell','C5_Tcell' )) %>% rownames()]
+Tcell_HC
+mrna = read.table('mRNA_GRCh38.95.gtf.TXT')
+Tcell_HC = Tcell_HC[mrna$V14,]
+Tcell_HC = CreateSeuratObject(Tcell_HC,min.cells = 10)
+Tcell_HC = NormalizeData(Tcell_HC, normalization.method = "LogNormalize", scale.factor = 10000)
+Tcell_HC = FindVariableFeatures(Tcell_HC, selection.method = "vst", nfeatures = 3000)
+Tcell_HC = ScaleData(Tcell_HC, features = VariableFeatures(Tcell_HC))   
+
+Tcell_HC = RunPCA(Tcell_HC, features = VariableFeatures(Tcell_HC)) 
+Tcell_HC = Tcell_HC %>% RunHarmony("sample_name", plot_convergence = TRUE,assay.use = "SCT")
+Tcell_HC = RunUMAP(Tcell_HC,reduction = 'pca',dims = 1:10)
+
+Tcell_HC = FindNeighbors(Tcell_HC, reduction = "pca", dims = 1:10)  
+Tcell_HC = FindClusters(Tcell_HC, resolution = 0.6,algorithm=1) 
+
+DimPlot(Tcell_HC, reduction = "umap",group.by = 'celltype',label = T,pt.size = 0.0001,
+        cols = c('#239774','#D15B1B','#726CAA','#A9D580','#609B2F','#2970A8','#DD337C','#9BC9E0','#A37226','#5F5F5F','#35A038'))+NoLegend()
+
+
+
+######## Supplementary 2E
+library(jjPlot)
+jjplot_vln = Tcell_HC@assays$RNA@data[c('MKI67','PLP2','SIVA1'),] %>% t() %>% data.frame()
+
+jjplot_vln = jjplot_vln[rownames(Tcell_HC@meta.data),]
+jjplot_vln$id = Tcell_HC$celltype
+jjplot_vln = reshape2::melt(jjplot_vln)
+names(jjplot_vln) = c( 'id','gene','exp')
+map_df(unique(jjplot_vln$id),function(x){
+  tmp <- jjplot_vln %>% filter(id == x)
+  map_df(unique(tmp$gene),function(j){
+    tmp1 <- tmp %>% filter(gene == j)
+    # calculate median expressions
+    tmp1$median_exp <- mean(tmp1$exp)
+    return(tmp1)
+  }) -> res
+  return(res)
+}) -> jjplot_vln
+
+ggplot(jjplot_vln,aes(x = gene,y = id)) +
+  geom_jjviomap(aes(val = exp,fill = median_exp),
+                width = 1) +
+  scale_fill_gradient(low = 'white',high = '#B92D30') +
+  theme_bw(base_size = 14) +
+  theme(panel.grid = element_blank(),
+        axis.text.x = element_text(angle = 90,hjust = 1,vjust = 0.5)) +
+  coord_fixed()
+
+
+######## Supplementary 2G
+library(GSVA)
+library(survival)
+library(survminer)
+ssGSEA_Score = gsva(as.matrix(bulk_Expr), as.data.frame(cycling_T_signature), 
+                    method='ssgsea', kcdf='Gaussian', abs.ranking=TRUE) 
+ssGSEA_Score = as.data.frame(t(ssGSEA_Score)) 
+names(ssGSEA_Score) = c('cycling_T')
+
+ssGSEA_Score = ssGSEA_Score[rownames(bulk_meta),]
+ssGSEA_Score$OS = bulk_meta$OS
+ssGSEA_Score$OS.time = bulk_meta$OS.time
+
+ssGSEA_Score$OS = as.numeric(ssGSEA_Score$OS)
+ssGSEA_Score$OS.time = as.numeric(ssGSEA_Score$OS.time)
+
+cut = surv_cutpoint(ssGSEA_Score,time = "OS.time",event = "OS",variables = "cycling_T") 
+sur = surv_categorize(cut) 
+
+ggsurvplot(survfit(Surv(sur$OS.time,event = sur$OS)~cycling_T,
+                                 data=sur),
+                         pval = TRUE, 
+                         risk.table = F, 
+                         risk.table.col = "strata", 
+                         ggtheme = theme_few(),
+                         font.x = c(14),font.y = c(14),
+                         font.tickslab = c(14, "black"),
+                         legend = c(0.88,0.9),
+                         legend.title = "", 
+                         palette=c("#ED0000","#00468B"))+ylab('Overall survival')+xlab('Time (day)')+
+  ggtitle('cycling_T')
+
+
+
+
+######## Supplementary 2H
+ssGSEA_Score = gsva(as.matrix(TCGA_HC), as.data.frame(cycling_T_signature), 
+                    method='ssgsea', kcdf='Gaussian', abs.ranking=TRUE) 
+ssGSEA_Score = as.data.frame(t(ssGSEA_Score)) 
+names(ssGSEA_Score) = c('cycling_T')
+
+TCGA_meta = TCGA_meta[rownames(ssGSEA_Score),]
+ssGSEA_Score$MVI = TCGA_meta$vascular_tumor_cell_type
+ssGSEA_Score = data.frame(ssGSEA_Score)
+ssGSEA_Score[colnames(TCGA_N),'MVI'] = 'Normal'
+ssGSEA_Score = filter(ssGSEA_Score,MVI %in% c('Micro','None'))
+ssGSEA_Score[ssGSEA_Score$MVI == 'None','MVI'] = 'MVI- HCC'
+ssGSEA_Score[ssGSEA_Score$MVI == 'Micro','MVI'] = 'MVI+ HCC'
+
+ggplot(ssGSEA_Score, aes(x = MVI, y = cycling_T,fill = MVI)) +  
+  geom_violin(aes(fill = MVI),alpha=0.9,lwd=0.7,width=0.3,color="white")+
+  geom_boxplot(alpha=0,outlier.color = NA, lwd=0.8,width=0.5)+
+  theme_bw()+stat_compare_means(method.args = list(alternative = "greater"))+
+  scale_fill_manual(values=c("#2BBBD8","#FD7013"))+ 
+  scale_color_manual(values=c("#2BBBD8","#FD7013"))+theme_few()+
+  theme(legend.position = "none",axis.text = element_text(color = "black"))+
+  ylab('Estimate of module')+xlab('')+
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.y = element_text(size = 14))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

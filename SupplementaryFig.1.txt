@@ -1,0 +1,124 @@
+######## Supplementary 1B
+library(Seurat)
+library(dplyr)
+library(ggpubr)
+
+scdata3 = ScaleData(scdata3,features = rownames(scdata3))
+scdata3 = RunPCA(scdata3, features = rownames(scdata3)) 
+scdata3 = RunTSNE(scdata3,features = rownames(scdata3))   
+
+
+tsne = data.frame(row.names = as.character(unique(scdata3$Patient)))
+for (i in as.character(unique(scdata3$Patient))) {
+  
+  a = scdata3@reductions$tsne@cell.embeddings[rownames(filter(scdata3@meta.data,Patient == i)),1:2]
+  tsne[i,'tsne1'] = mean(a[,1] %>% as.numeric())
+  tsne[i,'tsne2'] = mean(a[,2] %>% as.numeric())
+
+}
+
+tsne2 = data.frame(row.names = as.character(unique(scdata3$orig.ident)))
+for (i in as.character(unique(scdata3$orig.ident))) {
+  
+  a = scdata3@reductions$tsne@cell.embeddings[rownames(filter(scdata3@meta.data,orig.ident == i)),1:2]
+  tsne2[i,'tsne1'] = mean(a[,1] %>% as.numeric())
+  tsne2[i,'tsne2'] = mean(a[,2] %>% as.numeric())
+}
+
+
+tsne2$tissue = "N"
+tsne2[rownames(pca2) %in% c("T1","T2","T3","T4","T5"), "tissue"] = "T"
+
+tsne$MVI = "MVI"
+tsne[rownames(tsne) %in% c("P4",'P5'), "MVI"] = "No MVI"
+
+ggplot(data=tsne,aes(x= tsne1,y= tsne2))+geom_point(shape=21,size= 6,aes(color=factor(MVI)shape =factor(MVI) ) )
+
+ggplot(data= tsne2,aes(x= tsne1,y= tsne2))+geom_point(shape=21,size= 6,aes(color=factor(tissue)shape =factor(tissue) ) )
+
+
+
+
+
+######## Supplementary 1C
+library(Seurat)
+library(dplyr)
+library(ggpubr)
+ave_exp = AverageExpression(scdata2,features = rownames(scdata2),slot = 'counts')
+ave_exp = ave_exp$RNA
+
+screen = sapply(strsplit(colnames(TCGA_HC),"-"),"[",4)
+screen = sapply(strsplit(screen,""),"[",1)
+screen = gsub("2","1",screen)
+
+TCGA_N = TCGA_HC[,screen==1]      
+TCGA_T = TCGA_HC[,screen==0]   
+
+intersect_gene = intersect(rownames(scdata2),rownames(TCGA_HC))
+sc__N_exp = rowMeans(scdata2@assays$RNA@counts[intersect_gene,filter(scdata2@meta.data,tissue == 'Normal') %>% rownames()]) %>% data.frame()
+sc__T_exp = rowMeans(scdata2@assays$RNA@counts[intersect_gene,filter(scdata2@meta.data,tissue == 'Tumor') %>% rownames()]) %>% data.frame()
+
+TCGA_N_exp = rowMeans(TCGA_N[intersect_gene,]) %>% data.frame()
+TCGA_T_exp = rowMeans(TCGA_T[intersect_gene,]) %>% data.frame()
+
+names(sc__N_exp) = 'sc__N_exp'
+names(sc__T_exp) = 'sc__T_exp'
+names(TCGA_N_exp) = 'TCGA_N_exp'
+names(TCGA_T_exp) = 'TCGA_T_exp'
+
+cor = cbind(sc__N_exp,sc__T_exp,TCGA_N_exp,TCGA_T_exp)
+ggplot(cor,aes_string(x = cor$TCGA_T_exp,y = cor$sc__T_exp)) +
+  geom_point(size = 1,color = '#898281',alpha = 1) +
+  geom_smooth(method = 'loess',se = T,size = 1) +
+  stat_cor(method = "spearman",digits = 3,size=4)+
+  theme_bw() +theme(axis.title = element_text(size = 16),
+                    axis.text = element_text(size = 14),
+                    axis.ticks.length = unit(0.25,'cm'),
+                    axis.ticks = element_line(size = 1),
+                    panel.border = element_rect(size = 1.5),
+                    panel.grid = element_blank()) + ylim(0,50)+
+  xlab('Bulk RNA-seq(FPKM)')+ ylab("scRNA-seq(Count)")
+
+
+ggplot(cor,aes_string(x = cor$TCGA_N_exp,y = cor$sc__N_exp)) +
+  geom_point(size = 1,color = '#898281',alpha = 1) +
+  geom_smooth(method = 'loess',se = T,size = 1) +
+  stat_cor(method = "spearman",digits = 3,size=4)+
+  theme_bw() +theme(axis.title = element_text(size = 16),
+                    axis.text = element_text(size = 14),
+                    axis.ticks.length = unit(0.25,'cm'),
+                    axis.ticks = element_line(size = 1),
+                    panel.border = element_rect(size = 1.5),
+                    panel.grid = element_blank()) + ylim(0,50)+
+  xlab('Bulk RNA-seq(FPKM)')+ ylab("scRNA-seq(Count)")
+
+
+
+
+######## Supplementary 1D
+scdata[["percent.mt"]] = PercentageFeatureSet(scdata, pattern = "^MT-")  #线粒体细胞
+scdata[["percent.rb"]] = PercentageFeatureSet(scdata, pattern = "^RP[SL]")
+
+VlnPlot(scdata, features = c("nFeature_RNA", "nCount_RNA", "percent.mt","percent.rb"),ncol = 2,pt.size = 0,
+        cols = c('#A6DDEA','#80D0C3','#C8E8E1','#C2C8DA','#9EAAC4','#F9CDBF','#F3A59A','#EE8080','#D8CEC2','#BFB0A4'))  
+
+
+######## Supplementary 1E
+scdata@meta.data %>%
+  ggplot(aes(color = orig.ident, x=percent.mt, fill=orig.ident)) +
+  geom_density(alpha = 0.2) +
+  scale_x_log10() +
+  theme_classic() +
+  geom_vline(xintercept = 40)+
+  scale_color_manual(values = c('#A6DDEA','#80D0C3','#C8E8E1','#C2C8DA','#9EAAC4','#F9CDBF','#F3A59A','#EE8080','#D8CEC2','#BFB0A4'))
+
+scdata@meta.data %>%
+  ggplot(aes(color = orig.ident, x=nFeature_RNA, fill=orig.ident)) +
+  geom_density(alpha = 0.2) +
+  scale_x_log10() +
+  theme_classic() +
+  geom_vline(xintercept = c(400,6000))+
+  scale_color_manual(values = c('#A6DDEA','#80D0C3','#C8E8E1','#C2C8DA','#9EAAC4','#F9CDBF','#F3A59A','#EE8080','#D8CEC2','#BFB0A4'))
+
+
+

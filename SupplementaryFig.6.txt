@@ -1,0 +1,92 @@
+######## Supplementary 6B
+library(Seurat)
+library(dplyr)
+library(ggpubr)
+
+Tumor_HC = CellCycleScoring(object = Tumor_HC,
+                       g2m.features = cc.genes$g2m.genes,
+                       s.features = cc.genes$s.genes)
+
+prop = prop.table(table(Tumor_HC@meta.data$Phase, Tumor_HC@meta.data[,"MVI"]), 2) *100
+prop = reshape2::melt(prop)
+ggplot(prop,aes(Var2,value,fill = Var1 ))+geom_bar(stat = "identity")
+
+
+
+
+######## Supplementary 6C,D
+library(msigdbr)
+m_df = msigdbr(species = "Homo sapiens", category = "H") 
+Tumor_HC <- AddModuleScore(object = Tumor_HC, 
+                           features = list(c(filter(m_df,
+                                                    gs_name == 'HALLMARK_INFLAMMATORY_RESPONSE')$gene_symbol)))+NoLegend()
+VlnPlot(Tumor_HC,features = 'INFLAMMATORY_RESPONSE1',group.by = 'MVI',pt.size = 0)+stat_compare_means()
+VlnPlot(Tumor_HC,features = c('CCL3','CCL4','CXCL2'),group.by = 'MVI',pt.size = 0)+stat_compare_means()
+
+
+
+
+######## Supplementary 6E
+library(msigdbr)
+library(dplyr)
+m_df = msigdbr(species = "Homo sapiens", category = "H") 
+ccgenes = c(cc.genes$s.genes,cc.genes$g2m.genes)
+inflam = filter(m_df,gs_name == 'HALLMARK_INFLAMMATORY_RESPONSE')$gene_symbol
+
+ssGSEA_Score = gsva(as.matrix(TCGA_HC), list(ccgenes,inflam), 
+                    method='ssgsea', kcdf='Gaussian', abs.ranking=TRUE) 
+ssGSEA_Score = as.data.frame(t(ssGSEA_Score)) 
+names(ssGSEA_Score) = c('Proliferation','Inflammation')
+
+ssGSEA_Score = ssGSEA_Score[rownames(TCGA_meta),]
+ssGSEA_Score$MVI = TCGA_meta$vascular_tumor_cell_type
+
+ssGSEA_Score[colnames(TCGA_N),'MVI'] = 'Normal'
+
+ggplot(filter(ssGSEA_Score, MVI %in% c('None','Micro')) , aes(x = MVI, y = Inflammation    ,fill = MVI)) +  
+  geom_violin(aes(fill = MVI),alpha=0.9,lwd=0.7,width=0.3,color="white")+
+  geom_boxplot(alpha=0,outlier.color = NA, lwd=0.8,width=0.5)+
+  theme_bw()+stat_compare_means(method.args = list(alternative = "less"))+
+  scale_fill_manual(values=c("#2BBBD8","#FD7013"))+ 
+  scale_color_manual(values=c("#2BBBD8","#FD7013"))+
+  theme(legend.position = "none",axis.text = element_text(color = "black"))+
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.y = element_text(size = 14))
+
+
+ggplot(filter(ssGSEA_Score, MVI %in% c('None','Micro')) , aes(x = MVI, y = Proliferation    ,fill = MVI)) +  
+  geom_violin(aes(fill = MVI),alpha=0.9,lwd=0.7,width=0.3,color="white")+
+  geom_boxplot(alpha=0,outlier.color = NA, lwd=0.8,width=0.5)+
+  theme_bw()+stat_compare_means(method.args = list(alternative = "less"))+
+  scale_fill_manual(values=c("#2BBBD8","#FD7013"))+ 
+  scale_color_manual(values=c("#2BBBD8","#FD7013"))+
+  theme(legend.position = "none",axis.text = element_text(color = "black"))+
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.y = element_text(size = 14))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

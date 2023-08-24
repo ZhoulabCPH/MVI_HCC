@@ -1,0 +1,117 @@
+######## Figure 1B
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(harmony)
+scdata2 = SCTransform(scdata2, vars.to.regress = c("percent.mt", "nFeature_RNA","nCount_RNA")) 
+scdata2 = RunPCA(scdata2, features = VariableFeatures(scdata2)) 
+ElbowPlot(scdata2,ndims = 50)
+
+scdata2 = RunUMAP(scdata2, reduction = "pca",dims = 1:30)
+scdata2 = RunTSNE(scdata2, dims = 1:30,reduction = "pca",perplexity = 50)   
+
+scdata2 = FindNeighbors(scdata2, reduction = "pca", dims = 1:30)             
+scdata2 = FindClusters(scdata2, resolution = 0.3,algorithm=1)
+
+DimPlot(scdata2, reduction = "umap",group.by = 'celltype2',label = T,repel = T,pt.size = 0.01,
+        cols = c('#EFD4B4','#9BCFB9','#F0C0BD','#FB6264','#4E9C99','#70C055','#E98A27','#FEBC28'))
+
+DimPlot(scdata2, reduction = "umap")
+
+
+
+######## Figure 1C
+FeaturePlot(scdata4,features = "CD3E",reduction = "umap",pt.size = 0.0001,max.cutoff = 1.5,
+                 cols = c("#FFEFD5","#E6E6FA","#87CEFA","#6495ED","#4169E1","#0000CD","#000080"))+
+  scale_x_continuous("")+scale_y_continuous("")+ 
+  theme_bw()+
+  theme(  panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+          axis.ticks = element_blank(),axis.text = element_blank(),    
+          legend.position = "none",                                       
+          plot.title = element_text(hjust = 0.5,size=14))+ggtitle('T cell (CD3E)')
+
+
+######## Figure 1D
+top = cell_marker %>% group_by(cluster) %>% top_n(n = 20, wt = avg_log2FC ) 
+top = rbind(filter(top,cluster == 'T cell'),filter(top,cluster == 'Myeloid'),filter(top,cluster == 'B cell'),filter(top,cluster == 'Endo'),
+            filter(top,cluster == 'Mesenchyme'),filter(top,cluster == 'Epi'),filter(top,cluster == 'Malignant'))
+
+exp = AverageExpression(scdata4,group.by = 'celltype2',features = top$gene)
+
+scdata4$celltype2 = factor(scdata4$celltype2,levels = c('T cell','Myeloid','B cell','Endo','Mesenchyme','Epi','Malignant'))
+exp = exp$SCT
+exp = exp[,c('T cell','Myeloid','B cell','Endo','Mesenchyme','Epi','Malignant')]
+bk <- c(seq(-2,2,by=0.01))
+color = c(colorRampPalette(colors = c("white","#FEF9F7"))(length(bk)/2),colorRampPalette(colors = c("#FEF9F7","#FB6848"))(length(bk)/2))
+pheatmap(exp, fontsize=6,
+         color  = color,scale = 'row',
+         border_color = "grey60",border=T,
+         cluster_cols = F, cluster_rows = F,
+         show_rownames = F, show_colnames = T)
+
+
+library(clusterProfiler)
+res1 = bitr(top$gene,fromType=  "SYMBOL" ,toType="ENTREZID",OrgDb="org.Hs.eg.db")
+rownames(res1) = res1$SYMBOL
+kk <- enrichKEGG(res1[filter(top,cluster == 'T cell')$gene ,2], pvalueCutoff = 0.05,qvalueCutoff = 0.1)
+
+ego_BP = data.frame()
+for (i in as.character(unique(top$cluster))) {
+  ego_BP2 <- enrichGO(filter(top,cluster == i)$gene, 
+                     OrgDb = org.Hs.eg.db,ont = "BP", keyType = 'SYMBOL',
+                     pAdjustMethod = "BH",pvalueCutoff = 0.05,qvalueCutoff = 0.1,readable = FALSE)
+  ego_BP2@result$celltype = i
+  ego_BP = rbind(ego_BP,ego_BP2@result[1:10,])
+}
+ego_subset = ego_BP[c('GO:0140131','GO:0035747','GO:0010820','GO:0019886','GO:0060333','GO:0043312','GO:0050864','GO:0050853',
+         'GO:0042113','GO:0010739','GO:0042118','GO:004544','GO:0006936','GO:0033275','GO:0030239','GO:0070268',
+         'GO:0097284','GO:0043588',   'GO:0002576','GO:0034375','GO:0072376'),c(2,5,6,7,8,9,10)]
+ego_subset$log10 = -log10(ego_subset$p.adjust)
+ego_subset$Description = factor(ego_subset$Description,levels = rev(ego_subset$Description))
+
+ggplot(ego_subset, aes(x=Description, y=log10,fill = Count)) +
+  geom_bar(position = "dodge",stat = "identity",colour="black",width= 0.6)+coord_flip()+
+  scale_fill_gradient2(low = "#EFAE95", high = "#F37132")
+
+
+######## Figure 1G
+No_Malignant = filter(scdata4@meta.data,celltype2 != 'Malignant')
+prop = prop.table(table(No_Malignant$celltype2, No_Malignant[,"MVI2"]), 2) *100
+prop = reshape2::melt(prop)
+
+
+prop$Var1 = factor(prop$Var1,levels = c('T cell','B cell','Myeloid','Epi','Endo','Mesenchyme'))
+prop$Var2 = factor(prop$Var2,levels = c('Normal Non-MVI','Normal MVI','Tumor Non-MVI','Tumor MVI'))
+ggplot(prop,aes(Var2,value,fill = Var1 ))+geom_bar(stat = "identity",position = "stack")+ ggthemes::theme_few()+
+  scale_fill_manual(values = c('#A57EBF','#E2CAAE','#EEC689','#DE6449','#9BCFB9',
+                               '#87B2D4','#50C1E9','#DEA5BE','#93BF82'))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

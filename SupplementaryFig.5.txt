@@ -1,0 +1,37 @@
+######## Supplementary 5A
+library(Seurat)
+library(dplyr)
+library(ggpubr)
+
+VlnPlot(Stromal,features = c('HEY1','CXCL12'),group.by = 'meta.cluster',pt.size = 0)
+
+
+######## Supplementary 5B
+gene = TCGA_T[c('BAX','FOXC1'),] %>% t() %>% data.frame()
+gene = gene[intersect(rownames(gene),rownames(TCGA_sur)),]
+TCGA_sur = TCGA_sur[intersect(rownames(gene),rownames(TCGA_sur)),]
+gene$OS.time = TCGA_sur$OS.time
+gene$OS = TCGA_sur$OS
+
+cut = surv_cutpoint(gene,time = "OS.time",event = "OS",variables = "FOXC1") 
+sur = surv_categorize(cut) 
+ ggsurvplot(survfit(Surv(sur$OS.time,event = sur$OS)~FOXC1,
+                   data=sur),
+           pval = TRUE, 
+           risk.table = TRUE, 
+           risk.table.col = "strata", 
+           #linetype = "strata", 
+           surv.median.line = "hv", 
+           ggtheme = theme_bw(), 
+           palette=c("#ED0000","#00468B"))
+cut = surv_cutpoint(gene,time = "OS.time",event = "OS",variables = "BAX") 
+sur = surv_categorize(cut) 
+ ggsurvplot(survfit(Surv(sur$OS.time,event = sur$OS)~BAX,
+                   data=sur),
+           pval = TRUE, 
+           risk.table = TRUE, 
+           risk.table.col = "strata", 
+           #linetype = "strata", 
+           surv.median.line = "hv", 
+           ggtheme = theme_bw(), 
+           palette=c("#ED0000","#00468B"))

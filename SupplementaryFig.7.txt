@@ -1,0 +1,127 @@
+######## Supplementary 7B
+library(Seurat)
+library(dplyr)
+library(ggpubr)
+library(CellChat)
+
+
+prop = prop.table(table(meta$cell_type3, meta[,"sample_name"]), 2) *100
+prop = data.frame(prop)
+
+cor_frame = data.frame(row.names = as.character(unique(prop$Var1)))
+for (j in as.character(unique(prop$Var1))) {
+  for (i in as.character(unique(prop$Var1))) {
+    a = cbind(filter(prop,Var1 %in% c(j)),filter(prop,Var1 %in% c(i)))
+    a = a[,c(2,1,3,4,6)]
+    cor_frame[j,i] = cor(a$Freq,a$Freq.1,method ='spearman')
+  }
+}
+
+mat = cor_frame['Tumor',] %>% t() %>% data.frame() %>% arrange(Tumor)
+mat2 <- matrix(0, nrow = nrow(mat), ncol = nrow(mat), dimnames = list(rownames(mat),rownames(mat)))
+mat2['Tumor',]  = mat$Tumor
+
+netVisual_circle(mat2, vertex.size.max = 10,vertex.weight = c(1:42),weight.scale = T, label.edge= F,edge.weight.max = 0.4,
+                 color.use = c(colorRampPalette(c('#3D64AC','#DEEEDD'))(37),'#F4F1B3','#F4EDAE','#F5C885','#C73434','black'))
+
+
+
+######## Supplementary 7C
+exp = AverageExpression(Tumor_HC,features = 'MDK',group.by = 'sample_name')
+exp = data.frame(t(exp$SCT))
+names(exp) = 'exp'
+exp$Var2 = rownames(exp)
+prop = prop.table(table(scHC_cell@meta.data$cell_type2, scHC_cell@meta.data[,"orig.ident"]), 2) *100
+prop = reshape2::melt(prop)
+
+prop = filter(prop,Var1 == 'TREM2')
+prop = merge(exp,prop,by = 'Var2')
+
+ggplot(prop,
+       aes(x = exp,y = value))+
+  geom_point(size = 5)+
+  geom_smooth(method = lm)+  stat_cor()
+
+
+######## Supplementary 7D
+MDK = bulk_Expr[c('MDK','NCL'),] %>% t() %>% data.frame()
+ggplot(MDK,
+       aes(x = MDK,y = NCL))+
+  geom_point(size = 5)+
+  geom_smooth(method = lm)+  stat_cor()
+
+
+
+
+
+######## Supplementary 7E
+
+mdk = TCGA_HC[c('MDK'),] %>% t() %>% data.frame()
+ssGSEA_Score = gsva(as.matrix(TCGA_HC), as.data.frame(TREM2_Macro_signature), 
+                    method='ssgsea', kcdf='Gaussian', abs.ranking=TRUE) 
+ssGSEA_Score = as.data.frame(t(ssGSEA_Score)) 
+names(ssGSEA_Score) = 'TREM2_Macro'
+mdk$a = 'a'
+
+mdk = mdk[rownames(ssGSEA_Score),]
+mdk$ssGSEA_Score = ssGSEA_Score$TREM2_Macro
+
+mdk = mdk[rownames(TCGA_meta),]
+mdk$MVI = TCGA_meta$vascular_tumor_cell_type
+
+mdk[colnames(TCGA_N),'MVI'] = 'Normal'
+
+MVI= filter(mdk,MVI %in% c('Micro'))
+MVI$CLASS = if_else(MVI$MDK >= median(MVI$MDK),'High','Low')
+
+ggplot(MVI, aes(x = CLASS, y = TREM2_Macro ,fill = CLASS)) +  
+  geom_violin(aes(fill = CLASS),alpha=0.9,lwd=0.7,width=0.3,color="white")+
+  geom_boxplot(alpha=0,outlier.color = NA, lwd=0.8,width=0.5)+
+  theme_bw()+stat_compare_means()+
+  scale_fill_manual(values=c("#2BBBD8","#FD7013"))+ 
+  scale_color_manual(values=c("#2BBBD8","#FD7013"))+
+  theme(legend.position = "none",axis.text = element_text(color = "black"))+
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.y = element_text(size = 14))
+
+
+
+No_MVI= filter(mdk,MVI %in% c('None'))
+No_MVI$CLASS = if_else(No_MVI$MDK >= median(No_MVI$MDK),'High','Low')
+
+ggplot(No_MVI, aes(x = CLASS, y = TREM2_Macro ,fill = CLASS)) +  
+  geom_violin(aes(fill = CLASS),alpha=0.9,lwd=0.7,width=0.3,color="white")+
+  geom_boxplot(alpha=0,outlier.color = NA, lwd=0.8,width=0.5)+
+  theme_bw()+stat_compare_means()+
+  scale_fill_manual(values=c("#2BBBD8","#FD7013"))+ 
+  scale_color_manual(values=c("#2BBBD8","#FD7013"))+
+  theme(legend.position = "none",axis.text = element_text(color = "black"))+
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.y = element_text(size = 14))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

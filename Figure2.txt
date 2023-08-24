@@ -1,0 +1,206 @@
+######## Figure 2a-b
+library(scRNAtoolVis)
+library(ggplot2)
+library(ggpubr)
+library(Seurat)
+library(dplyr)
+library(harmony)
+Tcell = scdata3[,filter(scdata3@meta.data,celltype2 %in% c('T cell')) %>% rownames()]
+Tcell = SCTransform(Tcell, vars.to.regress = c("percent.mt", "nFeature_RNA","nCount_RNA")) 
+
+Tcell = RunPCA(Tcell, features = VariableFeatures(Tcell)) 
+ElbowPlot(Tcell,ndims = 50)
+
+
+Tcell$MVI = 'MVI'
+Tcell@meta.data[Tcell$Patient %in%c('P4','P5'),'MVI' ] = 'Non_MVI'
+
+Tcell = Tcell %>% RunHarmony("Patient", plot_convergence = TRUE,assay.use = "SCT")
+Tcell = RunUMAP(Tcell, reduction = "harmony",dims = 1:20)
+
+Tcell = FindNeighbors(Tcell, reduction = "harmony", dims = 1:20)             
+Tcell = FindClusters(Tcell, resolution = 0.3,algorithm=1)
+
+
+Tcell2 = Tcell[,filter(Tcell@meta.data,SCT_snn_res.0.3 %in% c(4,0,6,1,2,5,3)) %>% rownames()]   # 8,7,10 Doublet  9 is myeloid
+
+Tcell2 = SCTransform(Tcell2, vars.to.regress = c("percent.mt", "nFeature_RNA","nCount_RNA")) 
+
+Tcell2 = RunPCA(Tcell2, features = VariableFeatures(Tcell2)) 
+ElbowPlot(Tcell3,ndims = 50)
+
+Tcell2 = Tcell2 %>% RunHarmony("Patient", plot_convergence = TRUE,assay.use = "SCT")
+Tcell3 = RunUMAP(Tcell3, reduction = "harmony",dims = 1:20)
+
+rb.genes <- rownames(Tcell2)[grep("^RP[SL]",rownames(Tcell2))]
+Tcell2 = Tcell2[(!(rownames(Tcell2)  %in% rb.genes))]  
+
+Tcell3 = FindNeighbors(Tcell3, reduction = "harmony", dims = 1:20)             
+Tcell3 = FindClusters(Tcell3, resolution = 0.6,algorithm=1)
+
+DimPlot(Tcell2, reduction = "umap",group.by = 'SCT_snn_res.0.3',label = T,split.by = 'MVI')+NoLegend()
+
+
+T_marker = FindAllMarkers(Tcell3)
+top = T_marker %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC ) 
+
+jjDotPlot(Tcell3,id = 'celltype3', dot.col = c("#0E6DAE",'white','#C0293B'),xtree=F,ytree = F,
+          gene = c('NCAM1','XCL1','FCER1G',               # CD56 NK
+                   'CCL4L2','CCL3L1','CCL4',              # Inflamed NK
+                   'GNLY','NKG7','PRF1',                   # GNLY CTL
+                   'EGR1','FOSB','TNF',            # TNF memory T cells
+                   'IL7R','LTB','CXCR4',           # IL7R memory T cells
+                   'RGS1','CXCL13','CD8A',         # Activated T CD8 RGS1
+                   'SELL','CCR7',                   # Tn
+                   'FOXP3','CTLA4',                # Treg
+                   'MKI67','TOP2A'))             # Cycling
+
+Tcell3@meta.data[Tcell3$SCT_snn_res.0.5 == 1, 'celltype3'] = 'CD56 NK'
+Tcell3@meta.data[Tcell3$SCT_snn_res.0.5 == 6, 'celltype3'] = 'Inflamed NK'
+Tcell3@meta.data[Tcell3$SCT_snn_res.0.5 == 3, 'celltype3'] = 'GNLY CTL'
+Tcell3@meta.data[Tcell3$SCT_snn_res.0.5 == 0, 'celltype3'] = 'TNF Tmem'
+Tcell3@meta.data[Tcell3$SCT_snn_res.0.5 == 2, 'celltype3'] = 'IL7R Tmem'
+Tcell3@meta.data[Tcell3$SCT_snn_res.0.5 == 5, 'celltype3'] = 'Activated T RGS1'
+Tcell3@meta.data[Tcell3$SCT_snn_res.0.5 == 7, 'celltype3'] = 'T naive'
+Tcell3@meta.data[Tcell3$SCT_snn_res.0.5 == 8, 'celltype3'] = 'Treg'
+Tcell3@meta.data[Tcell3$SCT_snn_res.0.5 == 4, 'celltype3'] = 'Cycling'
+
+DimPlot(Tcell3, reduction = "umap",group.by = 'celltype3',label = T,
+        cols = c('#6C67AC','#FDBF6F','#B49D99','#9DCAE1','#E31A1C','#FF7F00',
+                 '#DEEDF9','#3F93C7','#CAB2D6'))
+
+
+
+######## Figure 2c
+Tcell3 = CellCycleScoring(object = Tcell3, 
+                        g2m.features = cc.genes$g2m.genes,
+                        s.features = cc.genes$s.genes)
+
+library(jjPlot)
+jjplot_vln = Tcell3@meta.data[,c('S.Score','G2M.Score','celltype3')]
+jjplot_vln = reshape2::melt(jjplot_vln)
+names(jjplot_vln) = c( 'id','gene','exp')
+map_df(unique(jjplot_vln$id),function(x){
+  tmp <- jjplot_vln %>% filter(id == x)
+  map_df(unique(tmp$gene),function(j){
+    tmp1 <- tmp %>% filter(gene == j)
+    # calculate median expressions
+    tmp1$median_exp <- mean(tmp1$exp)
+    return(tmp1)
+  }) -> res
+  return(res)
+}) -> jjplot_vln
+
+ggplot(jjplot_vln,aes(x = gene,y = id)) +
+  geom_jjviomap(aes(val = exp,fill = median_exp),
+                width = 1) +
+  scale_fill_gradient(low = 'white',high = '#B92D30') +
+  theme_bw(base_size = 14) +
+  theme(panel.grid = element_blank(),
+        axis.text.x = element_text(angle = 90,hjust = 1,vjust = 0.5)) +
+  coord_fixed()
+
+
+
+######## Figure 2d
+library("sscVis")
+library("data.table")
+library("grid")
+library("cowplot")
+library("ggrepel")
+library("readr")
+library("plyr")
+library("ggpubr")
+library("ggplot2")
+library("pheatmap")
+
+Tcell3@meta.data[Tcell3$orig.ident %in% c('1NT','NT2','NT3'),'MVI'] = 'N_MVI'
+Tcell3@meta.data[Tcell3$orig.ident %in% c('NT4','NT5'),'MVI'] = 'N_Non-MVI'
+Tcell3@meta.data[Tcell3$orig.ident %in% c('T1','T2','T3'),'MVI'] = 'T_MVI'
+Tcell3@meta.data[Tcell3$orig.ident %in% c('T4','T5' ),'MVI'] = 'T_Non-MVI'
+
+names(Tcell3@meta.data)[7] = 'loc'
+names(Tcell3@meta.data)[21] = 'meta.cluster'
+
+out.prefix <- "E/Fig1"
+OR.CD8.list <- do.tissueDist(cellInfo.tb = Tcell3@meta.data,
+                             out.prefix= sprintf("%s.STARTRAC.dist.T.baseline.CD8",out.prefix),
+                             pdf.width=4,pdf.height=6,verbose=1)
+
+pheatmap(OR.CD8.list$OR.dist.mtx,cluster_cols = F,color  = colorRampPalette(c('white','#FB7568','#FD3F38'))(100))
+
+
+
+######## Figure 2e-f
+c4 = Tcell3[,filter(Tcell3@meta.data,SCT_snn_res.0.5 == 4) %>% rownames()]
+c4 = SCTransform(c4, vars.to.regress = c("percent.mt", "nFeature_RNA","nCount_RNA")) 
+
+c4 = RunPCA(c4, features = VariableFeatures(c4)) 
+ElbowPlot(c4)
+c4 = RunUMAP(c4, reduction = "pca",dims = 1:12)
+c4 = FindNeighbors(c4, reduction = "pca", dims = 1:12)             
+c4 = FindClusters(c4, resolution = 0.2,algorithm=1)
+DimPlot(c4, reduction = "umap",group.by = 'SCT_snn_res.0.3',label = T)+NoLegend()
+
+
+FeaturePlot(c4,features = "PLP2",reduction = "umap",pt.size = 0.6,
+            cols = c("#FFEFD5","#E6E6FA","#87CEFA","#6495ED","#4169E1","#0000CD","#000080"))+
+  scale_x_continuous("")+scale_y_continuous("")+ 
+  theme_bw()+
+  theme(  panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+          axis.ticks = element_blank(),axis.text = element_blank(),    
+          legend.position = "none",                                       
+          plot.title = element_text(hjust = 0.5,size=14))
+
+
+######## Figure 2i
+library(org.Hs.eg.db)
+library(clusterProfiler)
+library(pathview)
+library(enrichplot)
+gmt <- read.gmt("h.all.v7.4.symbols.gmt")
+gmt <- read.gmt("c5.go.bp.v2022.1.Hs.symbols.gmt")
+gmt <- read.gmt("c2.cp.kegg.v2022.1.Hs.symbols.gmt")
+
+Idents(Tcell3) = 'celltype3'
+TCYC_edg = FindMarkers(Tcell3,ident.1 = 'Tcyc')
+TCYC_edg = filter(TCYC_edg,p_val_adj <= 0.05)
+#write.csv(CYC1_edg,file = 'E:/CYC1_DEG.Rdata')
+
+TCYC_edg$SYMBOL = rownames(TCYC_edg)
+names(TCYC_edg)[2] = c("logFC" )
+
+TCYC_edg <- TCYC_edg %>% arrange(desc(logFC))
+
+geneList = TCYC_edg$logFC 
+names(geneList) <- TCYC_edg$SYMBOL 
+
+gsea <- GSEA(geneList,TERM2GENE = gmt)  # Hall
+gsea2 <- GSEA(geneList,TERM2GENE = gmt) # GO bp
+gsea3 <- GSEA(geneList,TERM2GENE = gmt) # KEGG
+
+library(GseaVis)
+gseaNb(object = gsea,
+       geneSetID = c('HALLMARK_G2M_CHECKPOINT','HALLMARK_E2F_TARGETS','HALLMARK_GLYCOLYSIS'))
+
+gseaNb(object = gsea,
+       geneSetID = c('HALLMARK_TNFA_SIGNALING_VIA_NFKB','HALLMARK_INFLAMMATORY_RESPONSE','HALLMARK_UV_RESPONSE_UP'),
+       curveCol = jjAnno::useMyCol('paired',3))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

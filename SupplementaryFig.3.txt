@@ -1,0 +1,118 @@
+######## Supplementary 3A
+library(Seurat)
+library(dplyr)
+library(ggpubr)
+
+Bcell = scdata3[,filter(scdata3@meta.data,celltype2 %in% c('B cell')) %>% rownames()]
+Bcell_meta = Bcell@meta.data
+Bcell = CreateSeuratObject(Bcell@assays$RNA@counts)
+Bcell@meta.data = Bcell_meta
+Bcell = SCTransform(Bcell, vars.to.regress = c("percent.mt", "nFeature_RNA","nCount_RNA")) 
+Bcell = RunPCA(Bcell, features = VariableFeatures(Bcell)) 
+ElbowPlot(Bcell,ndims = 50)
+library(harmony)
+Bcell@meta.data[Bcell$orig.ident %in%c('1NT','T1'),'Patient' ] = 'P1'
+Bcell@meta.data[Bcell$orig.ident %in%c('NT2','T2'),'Patient' ] = 'P2'
+Bcell@meta.data[Bcell$orig.ident %in%c('NT3','T3'),'Patient' ] = 'P3'
+Bcell@meta.data[Bcell$orig.ident %in%c('NT4','T4'),'Patient' ] = 'P4'
+Bcell@meta.data[Bcell$orig.ident %in%c('NT5','T5'),'Patient' ] = 'P5'
+
+Bcell = Bcell %>% RunHarmony("Patient", plot_convergence = TRUE,assay.use = "SCT")
+Bcell = RunUMAP(Bcell, reduction = "harmony",dims = 1:20)
+
+Bcell = FindNeighbors(Bcell, reduction = "harmony", dims = 1:20)             
+Bcell = FindClusters(Bcell, resolution = 0.1,algorithm=1)
+
+DimPlot(Bcell, reduction = "umap",group.by = 'seurat_clusters',label = T)+NoLegend()
+
+Bcell2 = Bcell[,filter(Bcell@meta.data,!SCT_snn_res.2 %in% c(28,4,7,26,9,14,20)) %>% rownames()]  
+
+meta = Bcell2@meta.data
+Bcell2 = CreateSeuratObject(Bcell2@assays$RNA@counts)
+Bcell2@meta.data = meta
+
+Bcell2 = SCTransform(Bcell2,  variable.features.n = 500) 
+Bcell2 = RunPCA(Bcell2, features = VariableFeatures(Bcell2)) 
+ElbowPlot(Bcell2,ndims = 50)
+Bcell2 = Bcell2 %>% RunHarmony("Patient", plot_convergence = TRUE,assay.use = "SCT")
+Bcell2 = RunUMAP(Bcell2, reduction = "harmony",dims = 1:20)
+Bcell2 = FindNeighbors(Bcell2, reduction = "harmony", dims = 1:30)             
+Bcell2 = FindClusters(Bcell2, resolution = 0.1,algorithm=1)
+Bcell2 = FindClusters(Bcell2, resolution = 0.05,algorithm=1)
+
+DimPlot(Bcell2, reduction = "umap",group.by = 'celltype2',label = T,
+        cols = c('#ECC47A','#B3B4B9','#3CAA5D','#D8E6A7','#93D6C5',
+                 '#A0D3C8','#43C4BE','#EBABC9'))
+
+
+
+
+######## Supplementary 3B
+jjDotPlot(Bcell2,dot.col = c("#0E6DAE",'white','#C0293B'),xtree=F,ytree = F,id = 'meta.cluster',
+          gene = c('MS4A1','CD52','HLA-DRA','MKI67','TOP2A','LGALS1','IGHA2','IGHA1','IGHG2','IGHG1','IGHG3','IGHG4',
+                   'IGKC','IGKV4-1','SDC1','IGLC2','IGLC3','IGHM','CCDC88A'))          
+
+
+
+######## Supplementary 3C
+library("sscVis")
+library("data.table")
+library("grid")
+library("cowplot")
+library("ggrepel")
+library("readr")
+library("plyr")
+library("ggpubr")
+library("ggplot2")
+table(Bcell2$celltype2)
+
+Bcell2$loc = Bcell2$MVI
+Bcell2$meta.cluster = Bcell2$celltype2
+
+names(Bcell2@meta.data)[25] = 'loc'
+names(Bcell2@meta.data)[17] = 'meta.cluster'
+
+out.prefix <- "Fig1"
+OR.CD8.list <- do.tissueDist(cellInfo.tb = Bcell2@meta.data,
+                             out.prefix= sprintf("%s.STARTRAC.dist.T.baseline.CD8",out.prefix),
+                             pdf.width=4,pdf.height=6,verbose=1)
+
+
+bk <- c(seq(-2,2,by=0.01))
+color = c(colorRampPalette(colors = c("white","#FB7568"))(length(bk)/2),colorRampPalette(colors = c("#FB7568","#FC554B"))(length(bk)/2))
+pheatmap(OR.CD8.list$OR.dist.mtx,cluster_cols = F,border =F,color  =color,breaks = bk,scale = 'row')
+
+
+
+
+######## Supplementary 3D
+library(msigdbr)
+library(stringr)
+library(pheatmap)
+m_df = msigdbr(species = "Homo sapiens", category = "H") 
+msigdbr_list = split(x = m_df$gene_symbol, f = m_df$gs_name)
+
+expr <- as.data.frame(Bcell2@assays$SCT@data) 
+expr=as.matrix(expr) 
+Hall_Bcell <- gsva(expr, msigdbr_list, kcdf="Gaussian",method = "gsva")
+
+Hall_Bcell2 = data.frame(t(Hall_Bcell))
+Hall_Bcell2 = Hall_Bcell2[rownames(Bcell2@meta.data),]
+Hall_Bcell2$celltype = Bcell2$celltype2
+
+Hall_mean = group_by(Hall_Bcell2, celltype) %>% summarize_each(funs(mean)) %>% data.frame()
+rownames(Hall_mean) = Hall_mean$celltype
+Hall_mean$celltype = NULL
+Hall_mean = data.frame(t(Hall_mean))
+rownames(Hall_mean)[1:50] = substring(rownames(Hall_mean),10,)[1:50]
+
+pheatmap(Hall_mean , fontsize = 8,
+         color  = colorRampPalette(c('#2E80B9','white','#D84234'))(100),scale = 'row',
+         border=F,
+         cluster_cols = T, cluster_rows = F,
+         show_rownames = T, show_colnames = T)
+
+
+
+
+
